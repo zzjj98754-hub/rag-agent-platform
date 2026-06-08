@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!--
+      面试要点：
+      - MDC (Mapped Diagnostic Context) 基于 ThreadLocal，线程隔离，天然线程安全
+      - %X{traceId} 从 MDC 取 traceId，无值时输出 "~~" (占位)
+      - 控制台用彩色输出（本地开发），生产应输出到文件 + 采集器（Filebeat/Fluentd）
+    -->
+
+    <!-- 控制台追加器：带 TraceId 的彩色输出 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>
+                %d{HH:mm:ss.SSS} %highlight(%-5level) [%X{traceId:-}] %magenta(%thread) %cyan(%logger{36}) - %msg%n
+            </pattern>
+        </encoder>
+    </appender>
+
+    <!-- 文件追加器：结构化 key=value 格式，方便日志平台采集解析 -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/app.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/app.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>
+                time=%d{ISO8601} level=%-5level traceId=%X{traceId:-} thread=%thread logger=%logger{36} msg=%msg%n
+            </pattern>
+        </encoder>
+    </appender>
+
+    <!-- 应用日志级别 -->
+    <logger name="com.example.demo" level="INFO" />
+
+    <!-- 请求日志 Filter 专用 Logger -->
+    <logger name="com.example.demo.config.RequestLoggingFilter" level="INFO" />
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="FILE" />
+    </root>
+
+</configuration>

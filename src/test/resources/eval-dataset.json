@@ -1,0 +1,212 @@
+[
+  {
+    "id": "eval-001",
+    "query": "面向对象有哪三大特性",
+    "type": "factoid",
+    "groundTruthDocPrefixes": ["java.txt"],
+    "referenceAnswer": "面向对象三大特性是封装、继承和多态。"
+  },
+  {
+    "id": "eval-002",
+    "query": "Redis 是什么",
+    "type": "factoid",
+    "groundTruthDocPrefixes": ["redis.txt", "redis-in-depth.txt"],
+    "referenceAnswer": "Redis 是一个开源的内存数据结构存储系统。"
+  },
+  {
+    "id": "eval-003",
+    "query": "Spring IoC 是什么意思",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["spring.txt", "spring-ioc-aop.txt"],
+    "referenceAnswer": "IoC（控制反转）是将对象的创建和管理权交给 Spring 容器。"
+  },
+  {
+    "id": "eval-004",
+    "query": "Redis 支持哪些数据结构",
+    "type": "factoid",
+    "groundTruthDocPrefixes": ["redis.txt", "redis-in-depth.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-005",
+    "query": "Spring AOP 是怎么实现的",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["spring.txt", "spring-ioc-aop.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-006",
+    "query": "多态是什么",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["java.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-007",
+    "query": "缓存穿透怎么解决",
+    "type": "factoid",
+    "groundTruthDocPrefixes": ["redis.txt", "redis-in-depth.txt"],
+    "referenceAnswer": "布隆过滤器、缓存空值、参数校验。"
+  },
+  {
+    "id": "eval-008",
+    "query": "Java 和 Spring 有什么关系",
+    "type": "multi-hop",
+    "groundTruthDocPrefixes": ["java.txt", "spring.txt", "spring-ioc-aop.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-009",
+    "query": "继承和封装的区别",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["java.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-010",
+    "query": "Spring 事务的传播行为有哪些",
+    "type": "factoid",
+    "groundTruthDocPrefixes": ["spring-ioc-aop.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-011",
+    "query": "它的淘汰策略有哪些",
+    "type": "pronoun-resolution",
+    "groundTruthDocPrefixes": ["redis-in-depth.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-012",
+    "query": "依赖注入有哪些方式",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["spring.txt", "spring-ioc-aop.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-013",
+    "query": "Redis 持久化机制 RDB 和 AOF 的区别",
+    "type": "factoid",
+    "groundTruthDocPrefixes": ["redis-in-depth.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-014",
+    "query": "Java 集合框架中 HashMap 的实现原理",
+    "type": "factoid",
+    "groundTruthDocPrefixes": ["java-collections.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-015",
+    "query": "Spring Boot 自动配置是怎么工作的",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["spring-boot-autoconfig.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-016",
+    "query": "Redis 和传统数据库有什么区别",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["redis.txt", "redis-in-depth.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-017",
+    "query": "接口和抽象类有什么区别",
+    "type": "factoid",
+    "groundTruthDocPrefixes": ["java.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-018",
+    "query": "Spring Bean 的生命周期有哪些阶段",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["spring-ioc-aop.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-019",
+    "query": "面向对象和面向过程有什么区别",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["java.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-020",
+    "query": "缓存雪崩和缓存穿透有什么区别",
+    "type": "multi-hop",
+    "groundTruthDocPrefixes": ["redis.txt", "redis-in-depth.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-021",
+    "query": "ConcurrentHashMap 在 JDK7 和 JDK8 中有什么不同",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["java-collections.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-022",
+    "query": "synchronized 的锁升级机制是怎样的",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["java-concurrency.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-023",
+    "query": "JVM 的垃圾回收算法有哪些",
+    "type": "factoid",
+    "groundTruthDocPrefixes": ["java-jvm.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-024",
+    "query": "RAG 检索增强生成的基本原理是什么",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["rag-principles.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-025",
+    "query": "BM25 和向量检索有什么区别",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["vector-search.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-026",
+    "query": "MySQL InnoDB 的 B+Tree 索引为什么用 B+树不用哈希表",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["mysql-index-transaction.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-027",
+    "query": "设计模式中策略模式和模板方法模式有什么区别",
+    "type": "conceptual",
+    "groundTruthDocPrefixes": ["design-patterns.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-028",
+    "query": "HTTPS 的 TLS 握手过程是怎样的",
+    "type": "factoid",
+    "groundTruthDocPrefixes": ["http-https.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-029",
+    "query": "Spring MVC 的 DispatcherServlet 请求处理流程",
+    "type": "factoid",
+    "groundTruthDocPrefixes": ["spring-mvc-rest.txt"],
+    "referenceAnswer": null
+  },
+  {
+    "id": "eval-030",
+    "query": "CompletableFuture 和 Future 的区别以及线程池的核心参数",
+    "type": "multi-hop",
+    "groundTruthDocPrefixes": ["java-concurrency.txt"],
+    "referenceAnswer": null
+  }
+]

@@ -1,0 +1,159 @@
+package com.example.demo.service;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Component;
+
+/**
+ * 内存向量存储 —— ConcurrentHashMap + Redis JSON 持久化。
+ *
+ * O(N) 暴力余弦扫描，适合千级文档规模。
+ * Redis 负责重启恢复，不参与检索（避免每次查询拉全量数据）。
+ *
+ * 面试直接说：
+ *   "生产换 Redis Stack 的 HNSW 索引或 pgvector，
+ *    InMemoryVectorStore 作为降级兜底——架构上 VectorStore 是接口，切换零业务代码改动。"
+ */
+@Component("inMemoryVectorStore")
+public class InMemoryVectorStore implements VectorStore {
+
+    private static final Logger log = LoggerFactory.getLogger(InMemoryVectorStore.class);
+    private static final String REDIS_KEY = "rag:vectors";
+    private static final ObjectMapper mapper = new ObjectMapper();
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
+    private final ConcurrentHashMap<String, Entry> store = new ConcurrentHashMap<>();
+
+    @Override
+    public void add(String id, String text, float[] embedding,
+                    int dimension, String modelName,
+                    String parentId, String parentText) {
+        Entry entry = new Entry(id, text, embedding, dimension, modelName, parentId, parentText);
+        store.put(id, entry);
+        try {
+            StoredEntry se = new StoredEntry(id, text, embedding, dimension, modelName,
+                    parentId, parentText);
+            redisTemplate.opsForHash().put(REDIS_KEY, id, mapper.writeValueAsString(se));
+        } catch (JsonProcessingException e) {
+            log.warn("Redis 向量序列化失败: {}", e.getMessage());
+        } catch (Exception e) {
+            log.warn("Redis 向量持久化失败 (Redis 不可用): {}", e.getMessage());
+        }
+    }
+
+    @Override
+    public List<Result> search(float[] queryEmbedding, int topK) {
+        List<Entry> entries = new ArrayList<>(store.values());
+        List<Result> all = new ArrayList<>(entries.size());
+
+        for (Entry entry : entries) {
+            double sim = cosine(queryEmbedding, entry.embedding());
+            all.add(new Result(entry.id(), entry.text(), sim,
+                    entry.parentId(), entry.parentText()));
+        }
+
+        all.sort(Comparator.comparingDouble(Result::score).reversed());
+        return deduplicateByParent(all, topK);
+    }
+
+    @Override
+    public void delete(String id) {
+        store.remove(id);
+        try {
+            redisTemplate.opsForHash().delete(REDIS_KEY, id);
+        } catch (Exception e) {
+            log.warn("Redis 删除向量失败: {}", e.getMessage());
+        }
+    }
+
+    @Override
+    public int size() {
+        return store.size();
+    }
+
+    /**
+     * 按模型删除全部向量 —— 模型迁移时使用。
+     * 返回删除条数。
+     */
+    public int deleteByModel(String modelName) {
+        List<String> toRemove = new ArrayList<>();
+        for (Map.Entry<String, Entry> e : store.entrySet()) {
+            if (e.getValue().modelName().equals(modelName)) {
+                toRemove.add(e.getKey());
+            }
+        }
+        for (String id : toRemove) {
+            store.remove(id);
+            try {
+                redisTemplate.opsForHash().delete(REDIS_KEY, id);
+            } catch (Exception ex) {
+                log.warn("Redis 删除向量失败: {}", ex.getMessage());
+            }
+        }
+        log.info("已删除模型 [{}] 的 {} 条向量", modelName, toRemove.size());
+        return toRemove.size();
+    }
+
+    // ==================== Parent 级去重 ====================
+
+    /**
+     * Parent 级去重：同一 Parent 只保留得分最高的 Child。
+     * 去重后不够 topK 时从剩余候选中递补（保证多样性不缩水返回数量）。
+     */
+    private List<Result> deduplicateByParent(List<Result> sorted, int topK) {
+        List<Result> deduped = new ArrayList<>();
+        Set<String> seenParents = new HashSet<>();
+
+        for (Result r : sorted) {
+            String pid = r.parentId() != null ? r.parentId() : r.id();
+            if (seenParents.add(pid)) {
+                deduped.add(r);
+                if (deduped.size() >= topK) break;
+            }
+        }
+
+        if (deduped.size() < topK) {
+            for (Result r : sorted) {
+                String pid = r.parentId() != null ? r.parentId() : r.id();
+                if (!seenParents.contains(pid)) {
+                    seenParents.add(pid);
+                    deduped.add(r);
+                    if (deduped.size() >= topK) break;
+                }
+            }
+        }
+
+        return deduped;
+    }
+
+    // ==================== 余弦相似度 ====================
+
+    private static double cosine(float[] a, float[] b) {
+        double dot = 0, normA = 0, normB = 0;
+        for (int i = 0; i < a.length; i++) {
+            dot += (double) a[i] * b[i];
+            normA += (double) a[i] * a[i];
+            normB += (double) b[i] * b[i];
+        }
+        if (normA == 0 || normB == 0) return 0;
+        return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+    }
+
+    /** JSON 序列化载体 —— 含维度 + 模型元数据 */
+    private record StoredEntry(String id, String text, float[] embedding,
+                               int dimension, String modelName,
+                               String parentId, String parentText) {}
+}

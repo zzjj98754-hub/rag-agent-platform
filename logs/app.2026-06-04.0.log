@@ -1,0 +1,85 @@
+time=2026-06-04 19:29:06,954 level=INFO  traceId= thread=main logger=c.example.demo.MysqlConnectionTest msg=Starting MysqlConnectionTest using Java 17.0.19 with PID 25684 (started by 16067 in D:\dev\code\java\demo00)
+time=2026-06-04 19:29:06,957 level=INFO  traceId= thread=main logger=c.example.demo.MysqlConnectionTest msg=No active profile set, falling back to 1 default profile: "default"
+time=2026-06-04 19:29:08,946 level=INFO  traceId= thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Multiple Spring Data modules found, entering strict repository configuration mode
+time=2026-06-04 19:29:08,949 level=INFO  traceId= thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+time=2026-06-04 19:29:08,984 level=INFO  traceId= thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Finished Spring Data repository scanning in 15 ms. Found 0 Redis repository interfaces.
+time=2026-06-04 19:29:09,888 level=INFO  traceId= thread=main logger=c.e.demo.agent.tool.ToolRegistry msg=已注册工具: calculator (权限: [CALCULATOR])
+time=2026-06-04 19:29:09,891 level=INFO  traceId= thread=main logger=c.e.demo.agent.tool.ToolRegistry msg=已注册工具: search_knowledge (权限: [KNOWLEDGE_SEARCH])
+time=2026-06-04 19:29:09,934 level=INFO  traceId= thread=main logger=com.zaxxer.hikari.HikariDataSource msg=HikariPool-1 - Starting...
+time=2026-06-04 19:29:11,186 level=ERROR traceId= thread=main logger=c.e.d.config.MysqlConnectionVerifier msg=? MySQL 连接失败: Access denied for user 'root'@'localhost' (using password: YES)。RAG 功能不受影响，但请检查 MySQL 是否已启动。
+time=2026-06-04 19:29:11,203 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=启动时文档入库开始...
+time=2026-06-04 19:29:12,536 level=INFO  traceId= thread=main logger=c.example.demo.MysqlConnectionTest msg=Started MysqlConnectionTest in 5.914 seconds (process running for 7.527)
+time=2026-06-04 19:29:13,213 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:29:13,220 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:29:13,222 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=已入库文档: java.txt (2 个 Parent, 2 个 Child, 耗时 2004ms)
+time=2026-06-04 19:29:13,389 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:29:13,391 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=已入库文档: redis.txt (1 个 Parent, 1 个 Child, 耗时 162ms)
+time=2026-06-04 19:29:13,542 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:29:13,546 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:29:13,546 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=已入库文档: spring.txt (2 个 Parent, 2 个 Child, 耗时 148ms)
+time=2026-06-04 19:29:13,552 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=com.example.demo.rag.Bm25Index msg=BM25 索引重建：清空旧索引，新文档数 5
+time=2026-06-04 19:29:13,561 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=com.example.demo.rag.Bm25Index msg=BM25 索引构建完成：5 个文档，856 个唯一词项，平均文档长度 357.6 tokens
+time=2026-06-04 19:29:13,561 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=入库完成: 成功 3 篇, 跳过 0 篇, 失败 0 篇, Chunk 总数 5, 耗时 2358ms
+time=2026-06-04 19:29:13,561 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=启动时文档入库完成: 成功 3 篇, 跳过 0 篇, 失败 0 篇, 共 5 个 Chunk, 耗时 2358ms
+time=2026-06-04 19:29:13,754 level=INFO  traceId= thread=main logger=com.zaxxer.hikari.HikariDataSource msg=HikariPool-1 - Starting...
+time=2026-06-04 19:32:00,230 level=INFO  traceId= thread=main logger=c.example.demo.MysqlConnectionTest msg=Starting MysqlConnectionTest using Java 17.0.19 with PID 8448 (started by 16067 in D:\dev\code\java\demo00)
+time=2026-06-04 19:32:00,231 level=INFO  traceId= thread=main logger=c.example.demo.MysqlConnectionTest msg=No active profile set, falling back to 1 default profile: "default"
+time=2026-06-04 19:32:00,908 level=INFO  traceId= thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Multiple Spring Data modules found, entering strict repository configuration mode
+time=2026-06-04 19:32:00,910 level=INFO  traceId= thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+time=2026-06-04 19:32:00,936 level=INFO  traceId= thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Finished Spring Data repository scanning in 11 ms. Found 0 Redis repository interfaces.
+time=2026-06-04 19:32:01,729 level=INFO  traceId= thread=main logger=c.e.demo.agent.tool.ToolRegistry msg=已注册工具: calculator (权限: [CALCULATOR])
+time=2026-06-04 19:32:01,735 level=INFO  traceId= thread=main logger=c.e.demo.agent.tool.ToolRegistry msg=已注册工具: search_knowledge (权限: [KNOWLEDGE_SEARCH])
+time=2026-06-04 19:32:01,781 level=INFO  traceId= thread=main logger=com.zaxxer.hikari.HikariDataSource msg=HikariPool-1 - Starting...
+time=2026-06-04 19:32:02,012 level=INFO  traceId= thread=main logger=com.zaxxer.hikari.pool.HikariPool msg=HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@38d525aa
+time=2026-06-04 19:32:02,015 level=INFO  traceId= thread=main logger=com.zaxxer.hikari.HikariDataSource msg=HikariPool-1 - Start completed.
+time=2026-06-04 19:32:02,018 level=INFO  traceId= thread=main logger=c.e.d.config.MysqlConnectionVerifier msg=? MySQL 连接成功 | url=jdbc:mysql://localhost:3306/demo00?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&createDatabaseIfNotExist=true | MySQL 8.0.46 | HikariCP active=? idle=?
+time=2026-06-04 19:32:02,036 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=启动时文档入库开始...
+time=2026-06-04 19:32:03,491 level=INFO  traceId= thread=main logger=c.example.demo.MysqlConnectionTest msg=Started MysqlConnectionTest in 3.597 seconds (process running for 4.391)
+time=2026-06-04 19:32:04,237 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:32:04,244 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:32:04,247 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=已入库文档: java.txt (2 个 Parent, 2 个 Child, 耗时 2209ms)
+time=2026-06-04 19:32:04,389 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:32:04,389 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=已入库文档: redis.txt (1 个 Parent, 1 个 Child, 耗时 141ms)
+time=2026-06-04 19:32:04,550 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:32:04,554 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:32:04,555 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=已入库文档: spring.txt (2 个 Parent, 2 个 Child, 耗时 164ms)
+time=2026-06-04 19:32:04,560 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=com.example.demo.rag.Bm25Index msg=BM25 索引重建：清空旧索引，新文档数 5
+time=2026-06-04 19:32:04,564 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=com.example.demo.rag.Bm25Index msg=BM25 索引构建完成：5 个文档，856 个唯一词项，平均文档长度 357.6 tokens
+time=2026-06-04 19:32:04,565 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=入库完成: 成功 3 篇, 跳过 0 篇, 失败 0 篇, Chunk 总数 5, 耗时 2528ms
+time=2026-06-04 19:32:04,565 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=启动时文档入库完成: 成功 3 篇, 跳过 0 篇, 失败 0 篇, 共 5 个 Chunk, 耗时 2528ms
+time=2026-06-04 19:32:04,617 level=INFO  traceId= thread=main logger=c.example.demo.MysqlConnectionTest msg=? 测试连接成功 | jdbc:mysql://localhost:3306/demo00?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&createDatabaseIfNotExist=true | MySQL
+time=2026-06-04 19:32:04,805 level=INFO  traceId= thread=SpringApplicationShutdownHook logger=com.zaxxer.hikari.HikariDataSource msg=HikariPool-1 - Shutdown initiated...
+time=2026-06-04 19:32:04,815 level=INFO  traceId= thread=SpringApplicationShutdownHook logger=com.zaxxer.hikari.HikariDataSource msg=HikariPool-1 - Shutdown completed.
+time=2026-06-04 19:33:01,044 level=INFO  traceId= thread=main logger=com.example.demo.Demo00Application msg=Starting Demo00Application using Java 17.0.19 with PID 8328 (D:\dev\code\java\demo00\target\classes started by 16067 in D:\dev\code\java\demo00)
+time=2026-06-04 19:33:01,047 level=INFO  traceId= thread=main logger=com.example.demo.Demo00Application msg=No active profile set, falling back to 1 default profile: "default"
+time=2026-06-04 19:33:01,487 level=INFO  traceId= thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Multiple Spring Data modules found, entering strict repository configuration mode
+time=2026-06-04 19:33:01,489 level=INFO  traceId= thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+time=2026-06-04 19:33:01,513 level=INFO  traceId= thread=main logger=o.s.d.r.c.RepositoryConfigurationDelegate msg=Finished Spring Data repository scanning in 12 ms. Found 0 Redis repository interfaces.
+time=2026-06-04 19:33:01,979 level=INFO  traceId= thread=main logger=o.s.b.w.e.tomcat.TomcatWebServer msg=Tomcat initialized with port 9090 (http)
+time=2026-06-04 19:33:01,987 level=INFO  traceId= thread=main logger=o.a.coyote.http11.Http11NioProtocol msg=Initializing ProtocolHandler ["http-nio-9090"]
+time=2026-06-04 19:33:01,989 level=INFO  traceId= thread=main logger=o.a.catalina.core.StandardService msg=Starting service [Tomcat]
+time=2026-06-04 19:33:01,989 level=INFO  traceId= thread=main logger=o.a.catalina.core.StandardEngine msg=Starting Servlet engine: [Apache Tomcat/10.1.24]
+time=2026-06-04 19:33:02,038 level=INFO  traceId= thread=main logger=o.a.c.c.C.[Tomcat].[localhost].[/] msg=Initializing Spring embedded WebApplicationContext
+time=2026-06-04 19:33:02,038 level=INFO  traceId= thread=main logger=o.s.b.w.s.c.ServletWebServerApplicationContext msg=Root WebApplicationContext: initialization completed in 956 ms
+time=2026-06-04 19:33:02,353 level=INFO  traceId= thread=main logger=c.e.demo.agent.tool.ToolRegistry msg=已注册工具: calculator (权限: [CALCULATOR])
+time=2026-06-04 19:33:02,354 level=INFO  traceId= thread=main logger=c.e.demo.agent.tool.ToolRegistry msg=已注册工具: search_knowledge (权限: [KNOWLEDGE_SEARCH])
+time=2026-06-04 19:33:02,376 level=INFO  traceId= thread=main logger=com.zaxxer.hikari.HikariDataSource msg=HikariPool-1 - Starting...
+time=2026-06-04 19:33:02,471 level=INFO  traceId= thread=main logger=com.zaxxer.hikari.pool.HikariPool msg=HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@6e2eead5
+time=2026-06-04 19:33:02,472 level=INFO  traceId= thread=main logger=com.zaxxer.hikari.HikariDataSource msg=HikariPool-1 - Start completed.
+time=2026-06-04 19:33:02,474 level=INFO  traceId= thread=main logger=c.e.d.config.MysqlConnectionVerifier msg=? MySQL 连接成功 | url=jdbc:mysql://localhost:3306/demo00?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&createDatabaseIfNotExist=true | MySQL 8.0.46 | HikariCP active=? idle=?
+time=2026-06-04 19:33:02,482 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=启动时文档入库开始...
+time=2026-06-04 19:33:02,804 level=INFO  traceId= thread=main logger=o.a.coyote.http11.Http11NioProtocol msg=Starting ProtocolHandler ["http-nio-9090"]
+time=2026-06-04 19:33:02,815 level=INFO  traceId= thread=main logger=o.s.b.w.e.tomcat.TomcatWebServer msg=Tomcat started on port 9090 (http) with context path '/'
+time=2026-06-04 19:33:02,821 level=INFO  traceId= thread=main logger=com.example.demo.Demo00Application msg=Started Demo00Application in 2.061 seconds (process running for 2.256)
+time=2026-06-04 19:33:03,215 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:33:03,218 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:33:03,220 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=已入库文档: java.txt (2 个 Parent, 2 个 Child, 耗时 737ms)
+time=2026-06-04 19:33:03,463 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:33:03,463 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=已入库文档: redis.txt (1 个 Parent, 1 个 Child, 耗时 242ms)
+time=2026-06-04 19:33:03,624 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:33:03,629 level=WARN  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.demo.service.InMemoryVectorStore msg=Redis 向量持久化失败 (Redis 不可用): Unable to connect to Redis
+time=2026-06-04 19:33:03,629 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=已入库文档: spring.txt (2 个 Parent, 2 个 Child, 耗时 166ms)
+time=2026-06-04 19:33:03,631 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=com.example.demo.rag.Bm25Index msg=BM25 索引重建：清空旧索引，新文档数 5
+time=2026-06-04 19:33:03,634 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=com.example.demo.rag.Bm25Index msg=BM25 索引构建完成：5 个文档，856 个唯一词项，平均文档长度 357.6 tokens
+time=2026-06-04 19:33:03,634 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=入库完成: 成功 3 篇, 跳过 0 篇, 失败 0 篇, Chunk 总数 5, 耗时 1152ms
+time=2026-06-04 19:33:03,634 level=INFO  traceId= thread=ForkJoinPool.commonPool-worker-1 logger=c.e.d.s.DocumentIngestionService msg=启动时文档入库完成: 成功 3 篇, 跳过 0 篇, 失败 0 篇, 共 5 个 Chunk, 耗时 1152ms
