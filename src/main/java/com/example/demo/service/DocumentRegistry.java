@@ -30,7 +30,20 @@ public class DocumentRegistry {
     private final ConcurrentHashMap<String, DocRecord> docs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ChunkMeta> chunkMeta = new ConcurrentHashMap<>();
 
-    private record DocRecord(String fileHash, List<String> chunkIds, long ingestedAt) {}
+    private record DocRecord(
+            String fileHash,
+            List<String> chunkIds,
+            long ingestedAt,
+            int vectorCount,
+            EmbeddingService.EmbeddingSource embeddingSource) {}
+
+    public record DocumentSnapshot(
+            String documentId,
+            int chunkCount,
+            int vectorCount,
+            String embeddingSource,
+            long ingestedAt) {
+    }
 
     /**
      * Chunk 元数据 —— 用于 BM25 全量重建时提供 text + parentId + parentText。
@@ -55,10 +68,29 @@ public class DocumentRegistry {
      */
     public void register(String docId, String fileHash, Map<String, ChunkMeta> chunkMetas) {
         List<String> chunkIds = new ArrayList<>(chunkMetas.keySet());
-        docs.put(docId, new DocRecord(fileHash, chunkIds, System.currentTimeMillis()));
+        docs.put(docId, new DocRecord(
+                fileHash,
+                chunkIds,
+                System.currentTimeMillis(),
+                0,
+                EmbeddingService.EmbeddingSource.UNKNOWN));
         chunkMeta.putAll(chunkMetas);
         log.debug("已注册文档: {} ({} 个 chunk, hash={})", docId, chunkIds.size(),
                 fileHash.substring(0, Math.min(8, fileHash.length())));
+    }
+
+    public void markEmbedded(
+            String docId,
+            int vectorCount,
+            EmbeddingService.EmbeddingSource source) {
+        docs.computeIfPresent(docId, (ignored, current) -> new DocRecord(
+                current.fileHash(),
+                current.chunkIds(),
+                current.ingestedAt(),
+                Math.max(0, vectorCount),
+                source == null
+                        ? EmbeddingService.EmbeddingSource.UNKNOWN
+                        : source));
     }
 
     /**
@@ -108,11 +140,34 @@ public class DocumentRegistry {
         return map;
     }
 
+    public Map<String, ChunkMeta> getAllChunkMetadata() {
+        return Map.copyOf(chunkMeta);
+    }
+
+    public List<String> getChunkIds(String docId) {
+        DocRecord record = docs.get(docId);
+        return record == null ? List.of() : record.chunkIds();
+    }
+
     // ==================== 查询 ====================
 
     /** 已索引的文档 ID 集合 */
     public Set<String> getAllDocIds() {
         return Set.copyOf(docs.keySet());
+    }
+
+    public Map<String, DocumentSnapshot> getDocumentSnapshots() {
+        Map<String, DocumentSnapshot> snapshots =
+                new LinkedHashMap<>();
+        docs.forEach((documentId, record) -> snapshots.put(
+                documentId,
+                new DocumentSnapshot(
+                        documentId,
+                        record.chunkIds().size(),
+                        record.vectorCount(),
+                        record.embeddingSource().value(),
+                        record.ingestedAt())));
+        return Map.copyOf(snapshots);
     }
 
     /** 已注册的文档数 */

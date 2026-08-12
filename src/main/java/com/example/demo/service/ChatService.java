@@ -1,24 +1,19 @@
 package com.example.demo.service;
 
-import com.example.demo.rag.CitationFormatter;
-import com.example.demo.rag.CitationValidator;
-import com.example.demo.rag.HybridRetriever;
-import com.example.demo.rag.QueryRewriter;
-import com.example.demo.rag.RelevanceGate;
-import com.example.demo.rag.SearchResult;
+import com.example.demo.observability.RagObservability;
+import com.example.demo.security.AuthenticatedSessionService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -28,54 +23,49 @@ public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
     private static final String CACHE_PREFIX = "chat:cache:";
-    private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final String DIGEST_ALGO = "SHA-256";
 
-    @Autowired
-    private StringRedisTemplate redisTemplate;
-
-    @Autowired
-    private EmbeddingService embeddingService;
-
-    @Autowired
-    private VectorStore vectorStore;
-
-    @Autowired
-    private ChatSessionService sessionService;
-
-    @Autowired
-    private ExternalLlmClient llmClient;
-
-    @Autowired
-    private HybridRetriever hybridRetriever;
-
-    @Autowired
-    private QueryRewriter queryRewriter;
-
-    @Autowired
-    private CitationFormatter citationFormatter;
-
-    @Autowired
-    private CitationValidator citationValidator;
-
-    @Autowired
-    private RelevanceGate relevanceGate;
-
-    @Value("${app.cache.ttl:3600}")
-    private long cacheTtlSeconds;
-
-    @Value("${app.cache.ttl-jitter:0.1}")
-    private double ttlJitter;
-
-    @Value("${app.rag.top-k:3}")
-    private int topK;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
+    private final AuthenticatedSessionService authenticatedSessionService;
+    private final LlmClient llmClient;
+    private final RagPromptService ragPromptService;
+    private final ConversationCompletionService completionService;
+    private final RagObservability ragObservability;
+    private final String llmModel;
+    private final long cacheTtlSeconds;
+    private final double ttlJitter;
 
     // Redis 不可用时降级到本地缓存
     private final Map<String, String> fallbackCache = new ConcurrentHashMap<>();
 
     // 缓存统计
-    private long cacheHits = 0;
-    private long cacheMisses = 0;
+    private final AtomicLong cacheHits = new AtomicLong();
+    private final AtomicLong cacheMisses = new AtomicLong();
+
+    public ChatService(
+            StringRedisTemplate redisTemplate,
+            ObjectMapper objectMapper,
+            AuthenticatedSessionService authenticatedSessionService,
+            LlmClient llmClient,
+            RagPromptService ragPromptService,
+            ConversationCompletionService completionService,
+            RagObservability ragObservability,
+            @Value("${app.llm.model}") String llmModel,
+            @Value("${app.cache.ttl}") long cacheTtlSeconds,
+            @Value("${app.cache.ttl-jitter}") double ttlJitter) {
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+        this.authenticatedSessionService =
+                authenticatedSessionService;
+        this.llmClient = llmClient;
+        this.ragPromptService = ragPromptService;
+        this.completionService = completionService;
+        this.ragObservability = ragObservability;
+        this.llmModel = llmModel;
+        this.cacheTtlSeconds = cacheTtlSeconds;
+        this.ttlJitter = ttlJitter;
+    }
 
     /**
      * 缓存值元数据 —— JSON 序列化，含时间戳方便排查。
@@ -89,107 +79,74 @@ public class ChatService {
      * sessionId 为空时退化为无状态单轮问答。
      */
     public String ask(String query, String sessionId) {
+        return ragObservability.observeRequest(
+                query,
+                () -> doAsk(query, sessionId));
+    }
+
+    private String doAsk(String query, String sessionId) {
         // 0. 处理会话上下文
         String effectiveSid = resolveSessionId(sessionId);
-        String historyText = "";
-        if (effectiveSid != null) {
-            historyText = sessionService.formatHistory(effectiveSid);
-        }
-
-        // 0.5 Query Rewrite：利用历史做指代消解和上下文补充
-        String rewrittenQuery = queryRewriter.rewrite(query, historyText);
-
-        // 1. 混合检索 Top-K 相关文档 chunk（使用重写后的 query）
-        List<SearchResult> rawDocs = retrieveRelevantDocs(rewrittenQuery);
-
-        // 1.5 相关性门控：最高分 < 阈值 → 不把文档给 LLM
-        RelevanceGate.GateDecision gate = relevanceGate.evaluate(rawDocs);
-        List<SearchResult> effectiveDocs = gate.effectiveDocs();
-        String gateReason = gate.passed() ? null : gate.reason();
+        PreparedRagPrompt prepared =
+                ragPromptService.prepare(query, effectiveSid);
 
         // 2. 缓存 key = 命名空间 + hash(query + docs 指纹 + session)
-        String cacheKey = buildCacheKey(query, effectiveDocs.hashCode());
+        String cacheKey = buildCacheKey(
+                query,
+                prepared.documents().hashCode());
 
         // 3. 查 Redis 缓存（不可用时降级到本地缓存）
         //    注意：多轮对话的缓存 key 不变，但上下文不同 → 需要加入 session hash
         if (effectiveSid != null) {
-            cacheKey = buildCacheKey(query + "|s:" + effectiveSid, effectiveDocs.hashCode());
+            cacheKey = buildCacheKey(
+                    query + "|s:" + effectiveSid,
+                    prepared.documents().hashCode());
         }
         CacheHitResult cached = getFromCache(cacheKey);
         if (cached != null) {
-            cacheHits++;
-            long total = cacheHits + cacheMisses;
-            double hitRate = total > 0 ? (double) cacheHits / total * 100 : 0;
+            ragObservability.markCacheHit();
+            long hitCount = cacheHits.incrementAndGet();
+            long missCount = cacheMisses.get();
+            long total = hitCount + missCount;
+            double hitRate = total > 0
+                    ? (double) hitCount / total * 100
+                    : 0;
             log.info("缓存命中 | key={} | 总计 hits={} misses={} | 命中率={}%",
-                    cacheKey, cacheHits, cacheMisses, String.format("%.1f", hitRate));
+                    cacheKey, hitCount, missCount, String.format("%.1f", hitRate));
             String source = cached.fromRedis() ? "Redis缓存" : "本地缓存(降级)";
             long ageSec = (System.currentTimeMillis() - cached.cachedAt()) / 1000;
             return cached.value() + " (来自" + source + ", 已缓存" + ageSec + "秒)";
         }
-        cacheMisses++;
-        log.info("缓存未命中 | key={} | 总计 hits={} misses={}", cacheKey, cacheHits, cacheMisses);
-
-        // 4. 构建 prompt（门控通过 → 带引用文档；未通过 → 告知 LLM 无相关信息）
-        String prompt = buildPrompt(query, effectiveDocs, historyText, gateReason);
+        long missCount = cacheMisses.incrementAndGet();
+        log.info(
+                "缓存未命中 | key={} | 总计 hits={} misses={}",
+                cacheKey,
+                cacheHits.get(),
+                missCount);
 
         // 5. 调用大模型（模拟）
-        String response = llmClient.callLlm(prompt, "default");
-
-        // 5.5 引用校验：检测 LLM 是否编造引用编号
-        citationValidator.validate(response, effectiveDocs.size());
+        String response =
+                llmClient.callLlm(prepared.prompt(), llmModel);
 
         // 6. 写入 Redis 缓存（带 TTL 抖动，不可用时降级到本地）
         putToCache(cacheKey, response);
 
         // 7. 保存本轮对话到会话上下文
-        if (effectiveSid != null) {
-            sessionService.appendMessage(effectiveSid, "user", query);
-            sessionService.appendMessage(effectiveSid, "assistant", response);
-        }
+        completionService.complete(prepared, response);
 
         return response + " (首次生成)";
     }
 
     /**
-     * 带会话上下文的问答（供 SSE 流式端点调用）。
-     * 与 ask() 逻辑相同，但不走结果缓存、不附加 "(首次生成)" 标签。
+     * 校验请求中的会话归属；空 sessionId 表示无状态同步问答。
      */
-    public String askWithContext(String query, String sessionId) {
-        String effectiveSid = resolveSessionId(sessionId);
-        String historyText = "";
-        if (effectiveSid != null) {
-            historyText = sessionService.formatHistory(effectiveSid);
-        }
-
-        String rewrittenQuery = queryRewriter.rewrite(query, historyText);
-        List<SearchResult> rawDocs = retrieveRelevantDocs(rewrittenQuery);
-
-        RelevanceGate.GateDecision gate = relevanceGate.evaluate(rawDocs);
-        List<SearchResult> effectiveDocs = gate.effectiveDocs();
-        String gateReason = gate.passed() ? null : gate.reason();
-
-        String prompt = buildPrompt(query, effectiveDocs, historyText, gateReason);
-        String response = llmClient.callLlm(prompt, "default");
-
-        // 引用校验
-        citationValidator.validate(response, effectiveDocs.size());
-
-        if (effectiveSid != null) {
-            sessionService.appendMessage(effectiveSid, "user", query);
-            sessionService.appendMessage(effectiveSid, "assistant", response);
-        }
-
-        return response;
-    }
-
     private String resolveSessionId(String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             return null;
         }
-        if (!sessionService.exists(sessionId)) {
-            return sessionService.createSession();
-        }
-        return sessionId;
+        return authenticatedSessionService.resolveOrCreate(
+                sessionId,
+                "RAG 会话");
     }
 
     /**
@@ -210,13 +167,6 @@ public class ChatService {
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
-    }
-
-    /**
-     * 混合检索 —— BM25 关键词 + Embedding 语义双路检索，RRF 融合。
-     */
-    private List<SearchResult> retrieveRelevantDocs(String query) {
-        return hybridRetriever.retrieve(query, topK);
     }
 
     /** 含反序列化元数据的命中结果 */
@@ -267,49 +217,6 @@ public class ChatService {
     private long effectiveTtl() {
         double jitter = ttlJitter * (ThreadLocalRandom.current().nextDouble() * 2 - 1); // [-jitter, +jitter]
         return Math.max(60, (long) (cacheTtlSeconds * (1 + jitter)));
-    }
-
-    /**
-     * @param query        用户查询
-     * @param docs         有效文档（门控通过 → 带分数的文档；门控未通过 → 空列表）
-     * @param historyText  对话历史
-     * @param noDocsReason 门控未通过原因（null = 正常 RAG 路径）
-     */
-    private String buildPrompt(String query, List<SearchResult> docs, String historyText, String noDocsReason) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("你是一个知识助手。请严格基于以下信息回答用户问题。\n\n");
-
-        // 拼入多轮对话历史
-        if (historyText != null && !historyText.isEmpty()) {
-            sb.append(historyText);
-        }
-
-        // 门控未通过：告知 LLM 没有相关文档，禁止编造
-        if (noDocsReason != null) {
-            sb.append("=== 重要提示 ===\n");
-            sb.append("参考文档中未找到与用户问题相关的信息（").append(noDocsReason).append("）。\n");
-            sb.append("请如实告知用户这一情况，建议用户补充相关知识文档。\n");
-            sb.append("禁止编造答案。禁止使用你训练数据中的知识。\n");
-            sb.append("只说你确定能从参考文档中找到的信息。\n\n");
-            sb.append("用户问题：「").append(query).append("」\n");
-            sb.append("请用中文回答：");
-            return sb.toString();
-        }
-
-        // 正常 RAG 路径
-        if (docs.isEmpty()) {
-            sb.append("用户问：「").append(query).append("」，但没有找到相关文档。请根据历史对话简要回答。");
-            return sb.toString();
-        }
-
-        // 带编号的引用格式：[1] (来源: xx) 内容
-        sb.append(citationFormatter.formatReferenceSection(docs));
-        sb.append("\n");
-        sb.append(citationFormatter.getCitationInstruction(docs.size()));
-        sb.append("\n\n");
-        sb.append("用户问题：「").append(query).append("」\n");
-        sb.append("请用中文回答（必须引用来源编号）：");
-        return sb.toString();
     }
 
 }

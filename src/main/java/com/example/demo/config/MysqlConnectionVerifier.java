@@ -5,22 +5,24 @@ import java.sql.Connection;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
- * 启动时验证 MySQL 连接 —— 仅校验连接可用性，不影响业务启动。
+ * 启动时记录 MySQL 连接信息。
  *
- * 连接失败时打 ERROR 日志但不抛异常——现有 RAG 功能不依赖 MySQL，
- * 所以 DB 不可用时服务仍可正常对外提供问答能力。
+ * <p>MySQL 现在承载用户、文档和完整会话历史，属于业务依赖。
+ * 数据库迁移和启动失败策略由 Flyway 统一负责。
  */
 @Component
 public class MysqlConnectionVerifier {
 
     private static final Logger log = LoggerFactory.getLogger(MysqlConnectionVerifier.class);
 
-    @Autowired
-    private DataSource dataSource;
+    private final DataSource dataSource;
+
+    public MysqlConnectionVerifier(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
 
     @PostConstruct
     public void verifyConnection() {
@@ -32,7 +34,7 @@ public class MysqlConnectionVerifier {
                     url, dbProduct, dbVersion,
                     getPoolInfo("active"), getPoolInfo("idle"));
         } catch (Exception e) {
-            log.error("❌ MySQL 连接失败: {}。RAG 功能不受影响，但请检查 MySQL 是否已启动。", e.getMessage());
+            log.error("❌ MySQL 连接失败，业务持久化不可用: {}", e.getMessage());
         }
     }
 

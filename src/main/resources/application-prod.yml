@@ -1,0 +1,8 @@
+app:
+  llm:
+    url: "${LLM_URL}"
+    model: "${LLM_MODEL}"
+    streaming:
+      url: "${STREAMING_LLM_URL}"
+      api-key: "${STREAMING_LLM_API_KEY}"
+      model: "${STREAMING_LLM_MODEL}"

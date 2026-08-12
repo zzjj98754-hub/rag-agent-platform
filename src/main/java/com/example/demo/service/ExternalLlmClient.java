@@ -1,11 +1,11 @@
 package com.example.demo.service;
 
+import com.example.demo.observability.RagObservability;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -23,16 +23,22 @@ import org.springframework.web.client.RestTemplate;
  * - 生产环境应接入熔断器（Resilience4j / Sentinel）做更精细的控制
  */
 @Service
-public class ExternalLlmClient {
+public class ExternalLlmClient implements LlmClient {
 
     private static final Logger log = LoggerFactory.getLogger(ExternalLlmClient.class);
 
-    @Autowired
-    @Qualifier("llmRestTemplate")
-    private RestTemplate restTemplate;
+    private final RestTemplate restTemplate;
+    private final String llmUrl;
+    private final RagObservability observability;
 
-    @Value("${app.llm.url:http://localhost:9090/mock-llm}")
-    private String llmUrl;
+    public ExternalLlmClient(
+            @Qualifier("llmRestTemplate") RestTemplate restTemplate,
+            @Value("${app.llm.url}") String llmUrl,
+            RagObservability observability) {
+        this.restTemplate = restTemplate;
+        this.llmUrl = llmUrl;
+        this.observability = observability;
+    }
 
     /**
      * 调用外部 LLM API，超时时自动降级。
@@ -41,34 +47,70 @@ public class ExternalLlmClient {
      * @param model  模型名称（可选，用于后端路由）
      * @return LLM 返回文本
      */
+    @Override
     public String callLlm(String prompt, String model) {
         Map<String, String> body = Map.of("prompt", prompt, "model", model);
-
+        long start = System.nanoTime();
+        String content;
+        long reportedTokens = -1;
+        String outcome = "success";
         try {
-            long start = System.currentTimeMillis();
             @SuppressWarnings("unchecked")
             Map<String, Object> resp = restTemplate.postForObject(llmUrl, body, Map.class);
-            long elapsed = System.currentTimeMillis() - start;
-
             if (resp != null && resp.get("content") != null) {
-                String content = (String) resp.get("content");
-                log.info("LLM 调用成功 | 耗时={}ms | 响应长度={}", elapsed, content.length());
-                return content;
+                content = String.valueOf(resp.get("content"));
+                reportedTokens = extractTokenCount(resp);
+            } else {
+                log.warn("LLM 响应格式异常，使用降级回复");
+                content = fallbackResponse(prompt);
+                outcome = "fallback";
             }
-            log.warn("LLM 响应格式异常，使用降级回复 | 耗时={}ms", elapsed);
-            return fallbackResponse(prompt);
 
         } catch (ResourceAccessException e) {
-            // 网络层异常：连接超时 / 读取超时 / DNS 解析失败等
-            return handleTimeout(e, prompt);
+            content = handleTimeout(e, prompt);
+            outcome = "fallback";
         } catch (RestClientException e) {
-            // HTTP 层异常：4xx / 5xx 等
             log.error("LLM HTTP 异常: {}", e.getMessage());
-            return fallbackResponse(prompt);
+            content = fallbackResponse(prompt);
+            outcome = "fallback";
         } catch (Exception e) {
             log.error("LLM 调用未知异常: {}", e.getMessage(), e);
-            return fallbackResponse(prompt);
+            content = fallbackResponse(prompt);
+            outcome = "fallback";
         }
+
+        long elapsedNanos = System.nanoTime() - start;
+        long tokens = reportedTokens >= 0
+                ? reportedTokens
+                : estimateTokens(content);
+        observability.recordLlm(elapsedNanos, tokens, outcome);
+        log.info(
+                "LLM 调用完成 | outcome={} elapsed={}ms tokens={} response_length={}",
+                outcome,
+                elapsedNanos / 1_000_000,
+                tokens,
+                content.length());
+        return content;
+    }
+
+    @SuppressWarnings("unchecked")
+    private long extractTokenCount(Map<String, Object> response) {
+        Object usageValue = response.get("usage");
+        if (usageValue instanceof Map<?, ?> usage) {
+            Object totalTokens = usage.get("total_tokens");
+            if (totalTokens instanceof Number number) {
+                return number.longValue();
+            }
+        }
+        Object tokens = response.get("tokens");
+        return tokens instanceof Number number ? number.longValue() : -1;
+    }
+
+    private long estimateTokens(String content) {
+        if (content == null || content.isBlank()) {
+            return 0;
+        }
+        return Math.max(1, (content.codePointCount(0, content.length()) + 1L) / 2L);
     }
 
     /**

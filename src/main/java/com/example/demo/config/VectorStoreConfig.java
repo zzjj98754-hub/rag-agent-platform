@@ -18,14 +18,15 @@ import org.springframework.context.annotation.Primary;
 @Configuration
 public class VectorStoreConfig {
 
-    @Value("${app.vector-store.backend:in-memory}")
-    private String backend;
-
     @Bean
     @Primary
     public VectorStore vectorStore(
+            @Value("${app.vector-store.backend}") String backend,
             @Qualifier("inMemoryVectorStore") InMemoryVectorStore inMemory) {
-        // 未来扩展：switch(backend) { case "redis-stack" -> redisStack; default -> inMemory; }
+        if (!"in-memory".equalsIgnoreCase(backend)) {
+            throw new IllegalArgumentException(
+                    "不支持的 VectorStore 后端: " + backend);
+        }
         return inMemory;
     }
 }

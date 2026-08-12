@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.stereotype.Component;
 
 /**
@@ -22,13 +23,22 @@ import org.springframework.stereotype.Component;
 @Component("simpleEmbedding")
 public class SimpleEmbeddingService implements EmbeddingService {
 
-    private List<String> vocabulary = List.of();
-    private Map<String, Integer> termIndex = Map.of();
-    private Map<String, Double> idf = Map.of();
+    private volatile ModelSnapshot snapshot = ModelSnapshot.empty();
+    private final AtomicLong vocabularyVersion = new AtomicLong();
 
     @Override
     public int dimension() {
-        return vocabulary.size();
+        return snapshot.vocabulary().size();
+    }
+
+    @Override
+    public String modelName() {
+        return "local-tfidf-v" + vocabularyVersion.get();
+    }
+
+    @Override
+    public EmbeddingSource source() {
+        return EmbeddingSource.LOCAL;
     }
 
     /**
@@ -44,25 +54,32 @@ public class SimpleEmbeddingService implements EmbeddingService {
         }
 
         // 2. 构建词表（按 term 排序保证稳定性）
-        vocabulary = new ArrayList<>(df.keySet());
+        List<String> vocabulary = new ArrayList<>(df.keySet());
         vocabulary.sort(String::compareTo);
 
         // 3. term → index 映射
-        termIndex = new HashMap<>();
+        Map<String, Integer> termIndex = new HashMap<>();
         for (int i = 0; i < vocabulary.size(); i++) {
             termIndex.put(vocabulary.get(i), i);
         }
 
         // 4. 计算 IDF
         int N = chunks.size();
-        idf = new HashMap<>();
+        Map<String, Double> idf = new HashMap<>();
         for (String term : vocabulary) {
             idf.put(term, Math.log((double) N / (df.get(term) + 1)) + 1);
         }
+        snapshot = new ModelSnapshot(
+                List.copyOf(vocabulary),
+                Map.copyOf(termIndex),
+                Map.copyOf(idf));
+        vocabularyVersion.incrementAndGet();
     }
 
     @Override
     public float[] embed(String text) {
+        ModelSnapshot current = snapshot;
+        List<String> vocabulary = current.vocabulary();
         if (vocabulary.isEmpty()) return new float[0];
 
         float[] vec = new float[vocabulary.size()];
@@ -76,9 +93,10 @@ public class SimpleEmbeddingService implements EmbeddingService {
 
         // TF * IDF
         for (Map.Entry<String, Integer> e : tf.entrySet()) {
-            Integer idx = termIndex.get(e.getKey());
+            Integer idx = current.termIndex().get(e.getKey());
             if (idx != null) {
-                double weight = e.getValue() * idf.getOrDefault(e.getKey(), 1.0);
+                double weight = e.getValue()
+                        * current.idf().getOrDefault(e.getKey(), 1.0);
                 vec[idx] = (float) weight;
             }
         }
@@ -114,5 +132,15 @@ public class SimpleEmbeddingService implements EmbeddingService {
     /** 去重后的 term 集合（用于 DF 统计） */
     private List<String> uniqueTerms(String text) {
         return new ArrayList<>(new java.util.LinkedHashSet<>(tokenize(text)));
+    }
+
+    private record ModelSnapshot(
+            List<String> vocabulary,
+            Map<String, Integer> termIndex,
+            Map<String, Double> idf) {
+
+        private static ModelSnapshot empty() {
+            return new ModelSnapshot(List.of(), Map.of(), Map.of());
+        }
     }
 }

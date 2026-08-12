@@ -25,6 +25,8 @@ import org.slf4j.MDC;
 public class RequestLoggingFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(RequestLoggingFilter.class);
+    private static final String TRACE_HEADER = "X-Trace-Id";
+    private static final String VALID_TRACE_ID = "^[A-Za-z0-9_-]{8,64}$";
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -34,9 +36,9 @@ public class RequestLoggingFilter implements Filter {
         HttpServletResponse resp = (HttpServletResponse) response;
 
         // 1. 生成短 TraceId
-        String traceId = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String traceId = resolveTraceId(req);
         MDC.put("traceId", traceId);
-        resp.setHeader("X-Trace-Id", traceId);
+        resp.setHeader(TRACE_HEADER, traceId);
 
         long start = System.currentTimeMillis();
         String method = req.getMethod();
@@ -71,6 +73,14 @@ public class RequestLoggingFilter implements Filter {
             // 4. 清理 MDC：线程池复用场景下防止 traceId 串到其他请求
             MDC.clear();
         }
+    }
+
+    private String resolveTraceId(HttpServletRequest request) {
+        String upstreamTraceId = request.getHeader(TRACE_HEADER);
+        if (upstreamTraceId != null && upstreamTraceId.matches(VALID_TRACE_ID)) {
+            return upstreamTraceId;
+        }
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 12);
     }
 
 }

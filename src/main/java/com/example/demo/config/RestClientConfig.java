@@ -21,10 +21,10 @@ import org.springframework.web.client.RestTemplate;
 @Configuration
 public class RestClientConfig {
 
-    @Value("${app.llm.connect-timeout:3}")
+    @Value("${app.llm.connect-timeout}")
     private long connectTimeout;
 
-    @Value("${app.llm.read-timeout:30}")
+    @Value("${app.llm.read-timeout}")
     private long readTimeout;
 
     @Bean

@@ -13,12 +13,52 @@ import java.util.List;
  */
 public interface EmbeddingService {
 
+    enum EmbeddingSource {
+        SILICONFLOW("siliconflow"),
+        LOCAL("local"),
+        UNKNOWN("unknown");
+
+        private final String value;
+
+        EmbeddingSource(String value) {
+            this.value = value;
+        }
+
+        public String value() {
+            return value;
+        }
+    }
+
+    record EmbeddingVector(
+            float[] values,
+            EmbeddingSource source,
+            String modelName) {
+
+        public EmbeddingVector {
+            values = values == null ? new float[0] : values;
+            source = source == null ? EmbeddingSource.UNKNOWN : source;
+            modelName = modelName == null ? "unknown" : modelName;
+        }
+
+        public int dimension() {
+            return values.length;
+        }
+
+        public boolean isEmpty() {
+            return values.length == 0;
+        }
+    }
+
     /** 向量维度（vocabulary 构建后确定） */
     int dimension();
 
     /** 模型标识（用于版本管理和日志追踪） */
     default String modelName() {
         return getClass().getSimpleName();
+    }
+
+    default EmbeddingSource source() {
+        return EmbeddingSource.UNKNOWN;
     }
 
     /**
@@ -40,6 +80,16 @@ public interface EmbeddingService {
     /** 将文本转为向量 */
     float[] embed(String text);
 
+    default EmbeddingVector embedWithMetadata(String text) {
+        return new EmbeddingVector(embed(text), source(), modelName());
+    }
+
+    default EmbeddingVector embedWithMetadata(
+            String text,
+            EmbeddingSource preferredSource) {
+        return embedWithMetadata(text);
+    }
+
     /**
      * 批量文本 → 向量。默认逐条调用 embed()，API 实现应覆盖为单次批量请求。
      */
@@ -47,6 +97,16 @@ public interface EmbeddingService {
         List<float[]> results = new ArrayList<>();
         for (String text : texts) {
             results.add(embed(text));
+        }
+        return results;
+    }
+
+    default List<EmbeddingVector> embedBatchWithMetadata(
+            List<String> texts) {
+        List<float[]> vectors = embedBatch(texts);
+        List<EmbeddingVector> results = new ArrayList<>(vectors.size());
+        for (float[] vector : vectors) {
+            results.add(new EmbeddingVector(vector, source(), modelName()));
         }
         return results;
     }

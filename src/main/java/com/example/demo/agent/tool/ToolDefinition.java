@@ -34,9 +34,4 @@ public interface ToolDefinition {
         return Set.of();
     }
 
-    /** 执行超时（毫秒），默认 30s */
-    default long timeoutMs() {
-        return 30_000;
-    }
-
 }

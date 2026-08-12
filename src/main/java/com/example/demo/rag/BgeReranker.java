@@ -46,8 +46,8 @@ public class BgeReranker implements Reranker {
 
     public BgeReranker(
             @Value("${app.reranker.api-key}") String apiKey,
-            @Value("${app.reranker.url:https://api.siliconflow.cn/v1/rerank}") String apiUrl,
-            @Value("${app.reranker.model:BAAI/bge-reranker-v2-m3}") String model) {
+            @Value("${app.reranker.url}") String apiUrl,
+            @Value("${app.reranker.model}") String model) {
         this.apiKey = apiKey;
         this.apiUrl = apiUrl;
         this.model = model;
@@ -63,6 +63,11 @@ public class BgeReranker implements Reranker {
     public List<SearchResult> rerank(String query, List<SearchResult> documents, int topK) {
         if (documents.isEmpty()) {
             return List.of();
+        }
+
+        if (apiKey == null || apiKey.isBlank()) {
+            log.info("Reranker API Key 未配置，使用 RRF 粗排分数");
+            return documents.subList(0, Math.min(topK, documents.size()));
         }
 
         List<String> docTexts = documents.stream()
@@ -117,19 +122,7 @@ public class BgeReranker implements Reranker {
             int index = ((Number) item.get("index")).intValue();
             double score = ((Number) item.get("relevance_score")).doubleValue();
             SearchResult original = originals.get(index);
-            reranked.add(new SearchResult(original.id(), original.text(), score));
-        }
-
-        // 如果 API 返回的结果少于 topK，用粗排结果补全
-        if (reranked.size() < topK) {
-            for (SearchResult sr : originals) {
-                if (reranked.size() >= topK) break;
-                boolean alreadyIncluded = reranked.stream()
-                        .anyMatch(r -> r.id().equals(sr.id()));
-                if (!alreadyIncluded) {
-                    reranked.add(new SearchResult(sr.id(), sr.text(), 0.0));
-                }
-            }
+            reranked.add(original.withRanking(RerankResult.bge(score)));
         }
 
         log.debug("Reranker 精排完成：{} 条候选 → {} 条结果", docTexts.size(), reranked.size());

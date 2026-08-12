@@ -1,7 +1,6 @@
 package com.example.demo.agent.tool;
 
-import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,12 +21,19 @@ public class ToolRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(ToolRegistry.class);
 
-    private final Map<String, ToolDefinition> tools = new HashMap<>();
+    private final Map<String, ToolDefinition> tools = new LinkedHashMap<>();
+    private final ToolSchemaConverter schemaConverter;
 
     /** Spring 自动注入所有 ToolDefinition Bean */
-    public ToolRegistry(List<ToolDefinition> toolList) {
+    public ToolRegistry(
+            List<ToolDefinition> toolList,
+            ToolSchemaConverter schemaConverter) {
+        this.schemaConverter = schemaConverter;
         for (ToolDefinition tool : toolList) {
-            tools.put(tool.name(), tool);
+            schemaConverter.toFunctionSchema(tool);
+            if (tools.putIfAbsent(tool.name(), tool) != null) {
+                throw new IllegalStateException("存在重复工具名称: " + tool.name());
+            }
             log.info("已注册工具: {} (权限: {})", tool.name(), tool.requiredPermissions());
         }
     }
@@ -44,22 +50,25 @@ public class ToolRegistry {
 
     /** 获取所有工具名 */
     public Set<String> toolNames() {
-        return tools.keySet();
+        return Set.copyOf(tools.keySet());
     }
 
     /**
-     * 返回 LLM 可用的工具列表（OpenAI Function Calling 格式）。
+     * 返回 OpenAI function 对象列表。
      */
     public List<Map<String, Object>> listToolsForLLM() {
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (ToolDefinition tool : tools.values()) {
-            Map<String, Object> item = new HashMap<>();
-            item.put("name", tool.name());
-            item.put("description", tool.description());
-            item.put("parameters", tool.parametersSchema());
-            result.add(item);
-        }
-        return result;
+        return tools.values().stream()
+                .map(schemaConverter::toFunctionSchema)
+                .toList();
+    }
+
+    /**
+     * 返回 OpenAI Chat Completions API 可直接使用的 tools 数组。
+     */
+    public List<Map<String, Object>> listOpenAiTools() {
+        return tools.values().stream()
+                .map(schemaConverter::toOpenAiTool)
+                .toList();
     }
 
 }

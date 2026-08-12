@@ -1,0 +1,12 @@
+app:
+  llm:
+    url: "${LLM_URL:http://localhost:9090/mock-llm}"
+    model: "${LLM_MODEL:mock-dev}"
+    streaming:
+      url: "${STREAMING_LLM_URL:http://localhost:9090/mock-llm/stream}"
+      api-key: "${STREAMING_LLM_API_KEY:}"
+      model: "${STREAMING_LLM_MODEL:mock-dev}"
+  mock-llm:
+    min-delay-ms: 100
+    max-delay-ms: 200
+    stream-token-delay-ms: 20

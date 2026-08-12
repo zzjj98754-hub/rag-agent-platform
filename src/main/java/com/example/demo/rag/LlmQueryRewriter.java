@@ -6,10 +6,10 @@ import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import com.example.demo.service.ExternalLlmClient;
+import com.example.demo.service.LlmClient;
 
 /**
  * LLM + 规则混合 Query Rewrite 实现。
@@ -40,8 +40,15 @@ public class LlmQueryRewriter implements QueryRewriter {
     private static final Set<String> INVALID_MARKERS = Set.of(
             "【模拟 LLM 回答】", "【本地降级回复】", "【系统提示】");
 
-    @Autowired
-    private ExternalLlmClient llmClient;
+    private final LlmClient llmClient;
+    private final String llmModel;
+
+    public LlmQueryRewriter(
+            LlmClient llmClient,
+            @Value("${app.llm.model}") String llmModel) {
+        this.llmClient = llmClient;
+        this.llmModel = llmModel;
+    }
 
     @Override
     public String rewrite(String rawQuery, String history) {
@@ -84,7 +91,7 @@ public class LlmQueryRewriter implements QueryRewriter {
     private String tryLlmRewrite(String rawQuery, String history) {
         try {
             String prompt = buildRewritePrompt(rawQuery, history);
-            String response = llmClient.callLlm(prompt, "default");
+            String response = llmClient.callLlm(prompt, llmModel);
 
             // 检查是否 mock LLM 返回的无效结果
             for (String marker : INVALID_MARKERS) {

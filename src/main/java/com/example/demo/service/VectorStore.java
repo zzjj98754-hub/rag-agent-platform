@@ -1,6 +1,7 @@
 package com.example.demo.service;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * 向量存储抽象接口 —— 定义向量存取和检索的标准契约。
@@ -19,7 +20,28 @@ public interface VectorStore {
     /** 向量条目 —— 含完整元数据 */
     record Entry(String id, String text, float[] embedding,
                  int dimension, String modelName,
-                 String parentId, String parentText) {}
+                 EmbeddingService.EmbeddingSource embeddingSource,
+                 String parentId, String parentText) {
+
+        public Entry(
+                String id,
+                String text,
+                float[] embedding,
+                int dimension,
+                String modelName,
+                String parentId,
+                String parentText) {
+            this(
+                    id,
+                    text,
+                    embedding,
+                    dimension,
+                    modelName,
+                    EmbeddingService.EmbeddingSource.UNKNOWN,
+                    parentId,
+                    parentText);
+        }
+    }
 
     /** 检索结果 —— 按得分降序排列 */
     record Result(String id, String text, double score,
@@ -42,15 +64,41 @@ public interface VectorStore {
              int dimension, String modelName,
              String parentId, String parentText);
 
+    default void add(
+            String id,
+            String text,
+            EmbeddingService.EmbeddingVector embedding,
+            String parentId,
+            String parentText) {
+        add(
+                id,
+                text,
+                embedding.values(),
+                embedding.dimension(),
+                embedding.modelName(),
+                parentId,
+                parentText);
+    }
+
     /**
      * 余弦相似度 Top-K 检索 —— 在所有模型中检索。
      * 单模型场景直接使用此方法。
      */
     List<Result> search(float[] queryEmbedding, int topK);
 
+    default List<Result> search(
+            EmbeddingService.EmbeddingVector queryEmbedding,
+            int topK) {
+        return search(queryEmbedding.values(), topK);
+    }
+
     /** 删除指定 ID 的向量（文档更新/删除时用于清理旧 Chunk） */
     void delete(String id);
 
     /** 向量总数 */
     int size();
+
+    default Set<EmbeddingService.EmbeddingSource> embeddingSources() {
+        return Set.of();
+    }
 }

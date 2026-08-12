@@ -1,11 +1,16 @@
 package com.example.demo.service;
 
+import com.example.demo.observability.EmbeddingResilienceMetrics;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -32,21 +37,25 @@ public class ResilientEmbeddingService implements EmbeddingService {
 
     private final SiliconFlowEmbeddingService primary;
     private final SimpleEmbeddingService fallback;
-    private final ConcurrentHashMap<String, float[]> cache = new ConcurrentHashMap<>();
+    private final EmbeddingResilienceMetrics resilienceMetrics;
+    private final ConcurrentHashMap<String, EmbeddingVector> cache =
+            new ConcurrentHashMap<>();
 
-    @Value("${app.embedding.cache-max-size:2000}")
+    @Value("${app.embedding.cache-max-size}")
     private int cacheMaxSize;
 
-    @Value("${app.embedding.circuit-threshold:3}")
+    @Value("${app.embedding.circuit-threshold}")
     private int circuitThreshold;
 
-    @Value("${app.embedding.circuit-cooldown-seconds:60}")
+    @Value("${app.embedding.circuit-cooldown-seconds}")
     private long circuitCooldownSeconds;
 
     // 熔断器状态
-    private volatile CircuitState circuitState = CircuitState.CLOSED;
-    private volatile int consecutiveFailures = 0;
-    private volatile long circuitOpenedAt = 0;
+    private final AtomicReference<CircuitState> circuitState =
+            new AtomicReference<>(CircuitState.CLOSED);
+    private final AtomicInteger consecutiveFailures = new AtomicInteger();
+    private final AtomicLong circuitOpenedAt = new AtomicLong();
+    private final AtomicBoolean halfOpenProbeInProgress = new AtomicBoolean();
 
     private enum CircuitState {
         CLOSED,    // 正常，请求走主服务
@@ -56,9 +65,11 @@ public class ResilientEmbeddingService implements EmbeddingService {
 
     public ResilientEmbeddingService(
             @Qualifier("siliconFlowEmbedding") SiliconFlowEmbeddingService primary,
-            @Qualifier("simpleEmbedding") SimpleEmbeddingService fallback) {
+            @Qualifier("simpleEmbedding") SimpleEmbeddingService fallback,
+            EmbeddingResilienceMetrics resilienceMetrics) {
         this.primary = primary;
         this.fallback = fallback;
+        this.resilienceMetrics = resilienceMetrics;
     }
 
     @Override
@@ -68,7 +79,7 @@ public class ResilientEmbeddingService implements EmbeddingService {
 
     @Override
     public String modelName() {
-        if (circuitState == CircuitState.CLOSED && primary.isAvailable()) {
+        if (circuitState.get() == CircuitState.CLOSED && primary.isAvailable()) {
             return primary.modelName();
         }
         return fallback.modelName() + " (降级)";
@@ -76,95 +87,115 @@ public class ResilientEmbeddingService implements EmbeddingService {
 
     @Override
     public boolean isAvailable() {
-        return primary.isAvailable() || true; // fallback 始终可用
+        return true; // 本地 fallback 始终可用
     }
 
     @Override
     public void buildVocabulary(List<String> chunks) {
         fallback.buildVocabulary(chunks);
+        cache.clear();
     }
 
     @Override
     public float[] embed(String text) {
-        // 1. 查询缓存
-        String cacheKey = sha256Hex(text);
-        float[] cached = cache.get(cacheKey);
-        if (cached != null) {
-            log.debug("Embedding 缓存命中: {}", cacheKey.substring(0, 8));
-            return cached;
-        }
-
-        // 2. 尝试主服务
-        float[] result = tryPrimary(text);
-
-        // 3. 主服务不可用 → 降级到备选
-        if (result == null || result.length == 0) {
-            log.debug("Embedding 降级到 TF-IDF: {}", text.substring(0, Math.min(50, text.length())));
-            result = fallback.embed(text);
-        }
-
-        // 4. 写入缓存
-        if (result != null && result.length > 0) {
-            evictIfNeeded();
-            cache.put(cacheKey, result);
-        }
-
-        return result != null ? result : new float[0];
+        return embedWithMetadata(text).values();
     }
 
     @Override
     public List<float[]> embedBatch(List<String> texts) {
-        List<float[]> results = new ArrayList<>();
-        List<Integer> missIndexes = new ArrayList<>();
+        return embedBatchWithMetadata(texts).stream()
+                .map(EmbeddingVector::values)
+                .toList();
+    }
 
-        // 1. 查询缓存
-        for (int i = 0; i < texts.size(); i++) {
-            String cacheKey = sha256Hex(texts.get(i));
-            float[] cached = cache.get(cacheKey);
-            if (cached != null) {
-                results.add(cached);
-            } else {
-                results.add(null); // 占位
-                missIndexes.add(i);
-            }
+    @Override
+    public EmbeddingVector embedWithMetadata(String text) {
+        return embedWithMetadata(text, EmbeddingSource.UNKNOWN);
+    }
+
+    @Override
+    public EmbeddingVector embedWithMetadata(
+            String text,
+            EmbeddingSource preferredSource) {
+        EmbeddingSource preference = preferredSource == null
+                ? EmbeddingSource.UNKNOWN
+                : preferredSource;
+        String cacheKey = cacheKey(text, preference);
+        EmbeddingVector cached = cache.get(cacheKey);
+        if (cached != null) {
+            return cached;
         }
 
-        if (missIndexes.isEmpty()) {
+        EmbeddingVector result;
+        if (preference == EmbeddingSource.LOCAL) {
+            result = localEmbedding(text);
+        } else {
+            float[] primaryResult = tryPrimary(text);
+            result = primaryResult == null || primaryResult.length == 0
+                    ? localEmbedding(text)
+                    : new EmbeddingVector(
+                            primaryResult,
+                            EmbeddingSource.SILICONFLOW,
+                            primary.modelName());
+        }
+        cacheIfUsable(cacheKey, result);
+        return result;
+    }
+
+    @Override
+    public List<EmbeddingVector> embedBatchWithMetadata(
+            List<String> texts) {
+        if (texts.isEmpty()) {
+            return List.of();
+        }
+
+        List<float[]> primaryResults = tryPrimaryBatch(texts);
+        if (primaryResults.size() == texts.size()
+                && primaryResults.stream().allMatch(vector -> vector.length > 0)) {
+            List<EmbeddingVector> results = new ArrayList<>(texts.size());
+            for (int i = 0; i < texts.size(); i++) {
+                EmbeddingVector result = new EmbeddingVector(
+                        primaryResults.get(i),
+                        EmbeddingSource.SILICONFLOW,
+                        primary.modelName());
+                cacheIfUsable(cacheKey(texts.get(i), EmbeddingSource.UNKNOWN), result);
+                results.add(result);
+            }
             return results;
         }
 
-        // 2. 收集未命中文本
-        List<String> missedTexts = new ArrayList<>();
-        for (int idx : missIndexes) {
-            missedTexts.add(texts.get(idx));
+        List<EmbeddingVector> results = new ArrayList<>(texts.size());
+        for (String text : texts) {
+            EmbeddingVector result = localEmbedding(text);
+            cacheIfUsable(cacheKey(text, EmbeddingSource.UNKNOWN), result);
+            cacheIfUsable(cacheKey(text, EmbeddingSource.LOCAL), result);
+            results.add(result);
         }
-
-        // 3. 尝试主服务批量 embed
-        List<float[]> batchResult = tryPrimaryBatch(missedTexts);
-
-        // 4. 降级：逐条走 fallback
-        if (batchResult.isEmpty()) {
-            batchResult = new ArrayList<>();
-            for (String text : missedTexts) {
-                float[] vec = fallback.embed(text);
-                batchResult.add(vec.length > 0 ? vec : new float[0]);
-            }
-        }
-
-        // 5. 填充结果并写入缓存
-        for (int i = 0; i < missIndexes.size(); i++) {
-            int origIdx = missIndexes.get(i);
-            float[] vec = i < batchResult.size() ? batchResult.get(i) : new float[0];
-            results.set(origIdx, vec);
-
-            if (vec.length > 0) {
-                String cacheKey = sha256Hex(texts.get(origIdx));
-                evictIfNeeded();
-                cache.put(cacheKey, vec);
-            }
-        }
-
         return results;
+    }
+
+    private EmbeddingVector localEmbedding(String text) {
+        resilienceMetrics.recordFallbackCall();
+        float[] values = fallback.embed(text);
+        log.debug(
+                "Embedding 降级到 Local TF-IDF: {}",
+                text.substring(0, Math.min(50, text.length())));
+        return new EmbeddingVector(
+                values,
+                EmbeddingSource.LOCAL,
+                fallback.modelName());
+    }
+
+    private void cacheIfUsable(String key, EmbeddingVector result) {
+        if (result == null || result.isEmpty()) {
+            return;
+        }
+        evictIfNeeded();
+        cache.put(key, result);
+    }
+
+    private String cacheKey(String text, EmbeddingSource preference) {
+        return preference.name() + ':' + sha256Hex(text);
     }
 
     // ==================== 熔断器逻辑 ====================
@@ -206,46 +237,65 @@ public class ResilientEmbeddingService implements EmbeddingService {
     }
 
     private boolean shouldTryPrimary() {
-        switch (circuitState) {
+        switch (circuitState.get()) {
             case CLOSED:
                 return true;
             case OPEN:
-                if (System.currentTimeMillis() - circuitOpenedAt > circuitCooldownSeconds * 1000L) {
-                    circuitState = CircuitState.HALF_OPEN;
+                if (System.currentTimeMillis() - circuitOpenedAt.get()
+                        > circuitCooldownSeconds * 1000L
+                        && circuitState.compareAndSet(
+                                CircuitState.OPEN,
+                                CircuitState.HALF_OPEN)) {
+                    resilienceMetrics.setHalfOpen();
                     log.info("Embedding 熔断器进入半开状态，允许探测请求");
-                    return true;
+                    return halfOpenProbeInProgress.compareAndSet(false, true);
                 }
                 return false;
             case HALF_OPEN:
-                return true;
+                return halfOpenProbeInProgress.compareAndSet(false, true);
             default:
                 return true;
         }
     }
 
     private void onPrimarySuccess() {
-        consecutiveFailures = 0;
-        if (circuitState == CircuitState.HALF_OPEN) {
-            circuitState = CircuitState.CLOSED;
+        consecutiveFailures.set(0);
+        if (circuitState.compareAndSet(
+                CircuitState.HALF_OPEN,
+                CircuitState.CLOSED)) {
+            halfOpenProbeInProgress.set(false);
+            resilienceMetrics.setClosed();
             primary.markAvailable();
             log.info("Embedding 熔断器关闭，主服务恢复");
         }
     }
 
     private void onPrimaryFailure() {
-        consecutiveFailures++;
-        if (circuitState == CircuitState.HALF_OPEN) {
+        resilienceMetrics.recordPrimaryFailure();
+        int failures = consecutiveFailures.incrementAndGet();
+        CircuitState currentState = circuitState.get();
+        if (currentState == CircuitState.HALF_OPEN
+                && circuitState.compareAndSet(
+                        CircuitState.HALF_OPEN,
+                        CircuitState.OPEN)) {
             // 半开状态探测失败，重新打开熔断器
-            circuitState = CircuitState.OPEN;
-            circuitOpenedAt = System.currentTimeMillis();
+            circuitOpenedAt.set(System.currentTimeMillis());
+            halfOpenProbeInProgress.set(false);
             primary.markUnavailable();
+            resilienceMetrics.setOpen();
+            resilienceMetrics.recordCircuitOpen();
             log.warn("Embedding 半开探测失败，熔断器重新打开");
-        } else if (consecutiveFailures >= circuitThreshold) {
-            circuitState = CircuitState.OPEN;
-            circuitOpenedAt = System.currentTimeMillis();
+        } else if (currentState == CircuitState.CLOSED
+                && failures >= circuitThreshold
+                && circuitState.compareAndSet(
+                        CircuitState.CLOSED,
+                        CircuitState.OPEN)) {
+            circuitOpenedAt.set(System.currentTimeMillis());
             primary.markUnavailable();
+            resilienceMetrics.setOpen();
+            resilienceMetrics.recordCircuitOpen();
             log.warn("Embedding 熔断器打开（连续失败 {} 次），cooldown {}s",
-                    consecutiveFailures, circuitCooldownSeconds);
+                    failures, circuitCooldownSeconds);
         }
     }
 
@@ -270,12 +320,12 @@ public class ResilientEmbeddingService implements EmbeddingService {
         return cache.size();
     }
 
-    public CircuitState circuitState() {
-        return circuitState;
+    public String circuitState() {
+        return circuitState.get().name();
     }
 
     public int consecutiveFailures() {
-        return consecutiveFailures;
+        return consecutiveFailures.get();
     }
 
     // ==================== 工具方法 ====================

@@ -206,6 +206,7 @@ public class EvalRunnerTest {
      * 6. 验证降级后的向量仍有效（非空）
      */
     @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public void testCircuitBreakerFallback() throws InterruptedException {
         waitForIngestion();
         log.info("========== 熔断降级测试开始 ==========");
@@ -217,11 +218,13 @@ public class EvalRunnerTest {
         log.info("初始状态: 熔断器={}, 连续失败={}, 缓存大小={}",
                 initialState, initialFailures, resilientEmbeddingService.cacheSize());
 
-        // 2. 正常 embed 验证主服务工作正常
+        // 2. 验证当前可用路径能返回向量。CI 不配置外部 API Key 时会直接走
+        //    TF-IDF，因此不能把供应商模型的 1024 维写死在弹性层测试中。
         float[] normalResult = resilientEmbeddingService.embed("测试正常embed");
         log.info("正常 embed: 维度={}, 模型={}",
                 normalResult.length, resilientEmbeddingService.modelName());
-        assert normalResult.length == 1024 : "正常 embed 应返回 1024 维向量";
+        assert normalResult.length > 0 :
+                "Embedding 主路径或降级路径应返回有效向量";
 
         // 3. 手动触发连续失败将熔断器打入 OPEN
         //    方法：连续调用 embed 并确保每次调用都触发 onPrimaryFailure
@@ -232,14 +235,20 @@ public class EvalRunnerTest {
             java.lang.reflect.Field failuresField =
                     resilientEmbeddingService.getClass().getDeclaredField("consecutiveFailures");
             failuresField.setAccessible(true);
-            failuresField.setInt(resilientEmbeddingService, 3);  // 达到阈值
+            java.util.concurrent.atomic.AtomicInteger failures =
+                    (java.util.concurrent.atomic.AtomicInteger)
+                            failuresField.get(resilientEmbeddingService);
+            failures.set(3);  // 达到阈值
 
             java.lang.reflect.Field stateField =
                     resilientEmbeddingService.getClass().getDeclaredField("circuitState");
             stateField.setAccessible(true);
+            java.util.concurrent.atomic.AtomicReference stateReference =
+                    (java.util.concurrent.atomic.AtomicReference)
+                            stateField.get(resilientEmbeddingService);
 
             // 获取 CircuitState.OPEN 枚举常量
-            Class<?> stateEnumClass = stateField.getType();
+            Class<?> stateEnumClass = stateReference.get().getClass();
             Object openState = null;
             for (Object enumConstant : stateEnumClass.getEnumConstants()) {
                 if (enumConstant.toString().equals("OPEN")) {
@@ -247,12 +256,15 @@ public class EvalRunnerTest {
                     break;
                 }
             }
-            stateField.set(resilientEmbeddingService, openState);
+            stateReference.set(openState);
 
             java.lang.reflect.Field openedAtField =
                     resilientEmbeddingService.getClass().getDeclaredField("circuitOpenedAt");
             openedAtField.setAccessible(true);
-            openedAtField.setLong(resilientEmbeddingService, System.currentTimeMillis());
+            java.util.concurrent.atomic.AtomicLong openedAt =
+                    (java.util.concurrent.atomic.AtomicLong)
+                            openedAtField.get(resilientEmbeddingService);
+            openedAt.set(System.currentTimeMillis());
         } catch (Exception e) {
             log.error("反射设置熔断器状态失败: {}", e.getMessage());
         }
@@ -281,7 +293,10 @@ public class EvalRunnerTest {
             java.lang.reflect.Field stateField =
                     resilientEmbeddingService.getClass().getDeclaredField("circuitState");
             stateField.setAccessible(true);
-            Class<?> stateEnumClass = stateField.getType();
+            java.util.concurrent.atomic.AtomicReference stateReference =
+                    (java.util.concurrent.atomic.AtomicReference)
+                            stateField.get(resilientEmbeddingService);
+            Class<?> stateEnumClass = stateReference.get().getClass();
             Object closedState = null;
             for (Object enumConstant : stateEnumClass.getEnumConstants()) {
                 if (enumConstant.toString().equals("CLOSED")) {
@@ -289,17 +304,23 @@ public class EvalRunnerTest {
                     break;
                 }
             }
-            stateField.set(resilientEmbeddingService, closedState);
+            stateReference.set(closedState);
 
             java.lang.reflect.Field failuresField =
                     resilientEmbeddingService.getClass().getDeclaredField("consecutiveFailures");
             failuresField.setAccessible(true);
-            failuresField.setInt(resilientEmbeddingService, 0);
+            java.util.concurrent.atomic.AtomicInteger failures =
+                    (java.util.concurrent.atomic.AtomicInteger)
+                            failuresField.get(resilientEmbeddingService);
+            failures.set(0);
 
             java.lang.reflect.Field openedAtField =
                     resilientEmbeddingService.getClass().getDeclaredField("circuitOpenedAt");
             openedAtField.setAccessible(true);
-            openedAtField.setLong(resilientEmbeddingService, 0);
+            java.util.concurrent.atomic.AtomicLong openedAt =
+                    (java.util.concurrent.atomic.AtomicLong)
+                            openedAtField.get(resilientEmbeddingService);
+            openedAt.set(0);
         } catch (Exception e) {
             log.warn("恢复熔断器状态失败: {}", e.getMessage());
         }

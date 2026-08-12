@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.demo.persistence.mapper.UserMapper">
+
+    <resultMap id="UserResultMap" type="UserEntity">
+        <id property="id" column="id"/>
+        <result property="username" column="username"/>
+        <result property="password" column="password"/>
+        <result property="role" column="role"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <sql id="UserColumns">
+        id, username, password, role, create_time, update_time
+    </sql>
+
+    <insert id="insert" parameterType="UserEntity"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `user` (username, password, role)
+        VALUES (#{username}, #{password}, #{role})
+    </insert>
+
+    <select id="findById" resultMap="UserResultMap">
+        SELECT <include refid="UserColumns"/>
+        FROM `user`
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByUsername" resultMap="UserResultMap">
+        SELECT <include refid="UserColumns"/>
+        FROM `user`
+        WHERE username = #{username}
+    </select>
+
+    <update id="updatePassword">
+        UPDATE `user`
+        SET password = #{password}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateRole">
+        UPDATE `user`
+        SET role = #{role}
+        WHERE id = #{id}
+    </update>
+</mapper>

@@ -11,13 +11,55 @@ package com.example.demo.rag;
 public record SearchResult(
         String id,
         String text,
-        double score,
+        RerankResult ranking,
         String parentId,
         String parentText
 ) {
     /** 平铺模式兼容构造器：Parent = Child 自身 */
     public SearchResult(String id, String text, double score) {
-        this(id, text, score, id, text);
+        this(id, text, RerankResult.rrf(score), id, text);
+    }
+
+    public SearchResult(
+            String id,
+            String text,
+            double score,
+            String parentId,
+            String parentText) {
+        this(
+                id,
+                text,
+                RerankResult.rrf(score),
+                parentId,
+                parentText);
+    }
+
+    public double score() {
+        return ranking.score();
+    }
+
+    public RerankResult.ScoreType scoreType() {
+        return ranking.scoreType();
+    }
+
+    public SearchResult withRanking(RerankResult rerankResult) {
+        return new SearchResult(
+                id,
+                text,
+                rerankResult,
+                parentId,
+                parentText);
+    }
+
+    public SearchResult withParent(
+            String expandedParentId,
+            String expandedParentText) {
+        return new SearchResult(
+                id,
+                text,
+                ranking,
+                expandedParentId,
+                expandedParentText);
     }
 
     /**
@@ -41,7 +83,7 @@ public record SearchResult(
         if (!conditionalExpand) {
             return effectiveText();
         }
-        if (score >= HIGH_SCORE_THRESHOLD) {
+        if (score() >= HIGH_SCORE_THRESHOLD) {
             return text;  // Child 足够精准，省 Token
         }
         return parentText != null ? parentText : text;

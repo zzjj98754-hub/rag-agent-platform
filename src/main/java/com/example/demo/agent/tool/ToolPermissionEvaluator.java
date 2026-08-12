@@ -1,5 +1,6 @@
 package com.example.demo.agent.tool;
 
+import com.example.demo.security.UserRole;
 import java.util.Map;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -22,10 +23,10 @@ public class ToolPermissionEvaluator {
     /**
      * 角色 → 权限集合 映射（演示用，生产从 DB/配置中心加载）
      */
-    private static final Map<String, Set<String>> ROLE_PERMISSIONS = Map.of(
-            "admin", Set.of("*"),  // admin 拥有所有权限
-            "user",  Set.of("KNOWLEDGE_SEARCH", "CALCULATOR"),
-            "guest", Set.of("KNOWLEDGE_SEARCH")
+    private static final Map<UserRole, Set<String>> ROLE_PERMISSIONS = Map.of(
+            UserRole.ADMIN, Set.of("*"),
+            UserRole.USER, Set.of("KNOWLEDGE_SEARCH", "CALCULATOR"),
+            UserRole.GUEST, Set.of("KNOWLEDGE_SEARCH")
     );
 
     /**
@@ -35,9 +36,9 @@ public class ToolPermissionEvaluator {
      * @param role  用户角色
      * @return true=允许
      */
-    public boolean check(ToolDefinition tool, String role) {
+    public boolean check(ToolDefinition tool, UserRole role) {
         if (role == null) {
-            role = "guest";
+            role = UserRole.GUEST;
         }
 
         Set<String> required = tool.requiredPermissions();

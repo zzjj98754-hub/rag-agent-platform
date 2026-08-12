@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.demo.persistence.mapper.ChatMessageMapper">
+
+    <resultMap id="ChatMessageResultMap" type="ChatMessageEntity">
+        <id property="id" column="id"/>
+        <result property="sessionId" column="session_id"/>
+        <result property="role" column="role"/>
+        <result property="content" column="content"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <sql id="ChatMessageColumns">
+        id, session_id, role, content, create_time
+    </sql>
+
+    <insert id="insert" parameterType="ChatMessageEntity"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `chat_message` (session_id, role, content)
+        VALUES (#{sessionId}, #{role}, #{content})
+    </insert>
+
+    <select id="findRecentBySessionId" resultMap="ChatMessageResultMap">
+        SELECT recent.id,
+               recent.session_id,
+               recent.role,
+               recent.content,
+               recent.create_time
+        FROM (
+            SELECT <include refid="ChatMessageColumns"/>
+            FROM `chat_message`
+            WHERE session_id = #{sessionId}
+            ORDER BY id DESC
+            LIMIT #{limit}
+        ) AS recent
+        ORDER BY recent.id ASC
+    </select>
+
+    <select id="findAllBySessionId" resultMap="ChatMessageResultMap">
+        SELECT <include refid="ChatMessageColumns"/>
+        FROM `chat_message`
+        WHERE session_id = #{sessionId}
+        ORDER BY id ASC
+    </select>
+
+    <select id="countBySessionId" resultType="long">
+        SELECT COUNT(*)
+        FROM `chat_message`
+        WHERE session_id = #{sessionId}
+    </select>
+</mapper>

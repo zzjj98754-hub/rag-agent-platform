@@ -1,0 +1,20 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {"type":"timeseries","title":"HTTP P95 latency","gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"expr":"histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[5m])) by (le))","legendFormat":"p95"}]},
+    {"type":"timeseries","title":"RAG total P95 latency","gridPos":{"h":8,"w":12,"x":12,"y":0},"targets":[{"expr":"histogram_quantile(0.95, sum(rate(rag_request_duration_seconds_bucket[5m])) by (le))","legendFormat":"p95"}]},
+    {"type":"timeseries","title":"LLM P95 latency","gridPos":{"h":8,"w":12,"x":0,"y":8},"targets":[{"expr":"histogram_quantile(0.95, sum(rate(rag_llm_duration_seconds_bucket[5m])) by (le))","legendFormat":"p95"}]},
+    {"type":"timeseries","title":"Tokens / minute","gridPos":{"h":8,"w":12,"x":12,"y":8},"targets":[{"expr":"sum(rate(rag_llm_tokens_sum[1m])) * 60","legendFormat":"tokens"}]},
+    {"type":"timeseries","title":"RAG errors / minute","gridPos":{"h":8,"w":12,"x":0,"y":16},"targets":[{"expr":"sum(rate(rag_requests_total{outcome=\"failure\"}[1m])) * 60","legendFormat":"errors"}]},
+    {"type":"timeseries","title":"Retrieval and rerank latency","gridPos":{"h":8,"w":12,"x":12,"y":16},"targets":[{"expr":"rate(rag_retrieval_duration_seconds_sum[5m]) / rate(rag_retrieval_duration_seconds_count[5m])","legendFormat":"retrieval avg"},{"expr":"rate(rag_rerank_duration_seconds_sum[5m]) / rate(rag_rerank_duration_seconds_count[5m])","legendFormat":"rerank avg"}]}
+  ],
+  "schemaVersion": 39,
+  "tags": ["rag", "agent"],
+  "templating": {"list": []},
+  "time": {"from":"now-1h","to":"now"},
+  "title": "RAG Agent Overview",
+  "uid": "demo00-rag-overview",
+  "version": 1
+}

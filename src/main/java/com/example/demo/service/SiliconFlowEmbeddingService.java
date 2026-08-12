@@ -35,13 +35,13 @@ public class SiliconFlowEmbeddingService implements EmbeddingService {
     private final String model;
     private volatile boolean available = true;
 
-    @Value("${app.embedding.batch-size:32}")
+    @Value("${app.embedding.batch-size}")
     private int batchSize;
 
-    @Value("${app.embedding.retry-max:2}")
+    @Value("${app.embedding.retry-max}")
     private int retryMax;
 
-    @Value("${app.embedding.retry-backoff-ms:500}")
+    @Value("${app.embedding.retry-backoff-ms}")
     private long retryBackoffMs;
 
     public SiliconFlowEmbeddingService(
@@ -67,6 +67,11 @@ public class SiliconFlowEmbeddingService implements EmbeddingService {
     @Override
     public String modelName() {
         return model;
+    }
+
+    @Override
+    public EmbeddingSource source() {
+        return EmbeddingSource.SILICONFLOW;
     }
 
     @Override
@@ -106,6 +111,11 @@ public class SiliconFlowEmbeddingService implements EmbeddingService {
     }
 
     private List<float[]> callApiWithRetry(List<String> texts) {
+        if (apiKey == null || apiKey.isBlank()) {
+            available = false;
+            log.info("Embedding API Key 未配置，直接使用本地向量降级");
+            return List.of();
+        }
         for (int attempt = 0; attempt <= retryMax; attempt++) {
             try {
                 List<float[]> result = callApi(texts);

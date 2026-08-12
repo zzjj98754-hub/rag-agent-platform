@@ -1,0 +1,15 @@
+.git
+.idea
+.vscode
+target
+logs
+load-test-results
+docker
+docs
+scripts
+*.iml
+*.log
+AGENTS.md
+CLAUDE.md
+HELP.md
+interview-qa-50.md

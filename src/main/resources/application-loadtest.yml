@@ -1,0 +1,36 @@
+app:
+  load-test:
+    username: "${LOAD_TEST_USERNAME:loadtest}"
+    password: "${LOAD_TEST_PASSWORD}"
+  embedding:
+    api-key: load-test
+    url: http://localhost:18080/v1/embeddings
+    retry-max: 0
+    retry-backoff-ms: 0
+    circuit-threshold: 3
+    circuit-cooldown-seconds: 300
+  reranker:
+    api-key: load-test
+    url: http://localhost:18080/v1/rerank
+  llm:
+    url: http://localhost:18080/mock-llm
+    connect-timeout: 1
+    read-timeout: 1
+    streaming:
+      url: http://localhost:18080/mock-llm/stream
+  rag:
+    executor:
+      core-size: 16
+      max-size: 64
+      queue-capacity: 500
+
+server:
+  tomcat:
+    threads:
+      max: 250
+    accept-count: 200
+
+management:
+  endpoint:
+    health:
+      show-details: always

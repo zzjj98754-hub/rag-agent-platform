@@ -1,31 +1,31 @@
 package com.example.demo.agent.tool;
 
-import com.example.demo.service.EmbeddingService;
-import com.example.demo.service.VectorStore;
+import com.example.demo.rag.HybridRetriever;
+import com.example.demo.rag.SearchResult;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * 知识库检索工具 —— 搜索本地文档向量库。
+ * 知识库检索工具 —— 复用 BM25 + Vector + RRF + Reranker 完整混合检索链路。
  *
  * 权限：KNOWLEDGE_SEARCH —— 普通用户默认拥有
  */
 @Component
 public class SearchTool implements ToolDefinition {
 
-    @Autowired
-    private EmbeddingService embeddingService;
+    private final HybridRetriever hybridRetriever;
+    private final int topK;
 
-    @Autowired
-    private VectorStore vectorStore;
-
-    @Value("${app.rag.top-k:3}")
-    private int topK;
+    public SearchTool(
+            HybridRetriever hybridRetriever,
+            @Value("${app.rag.top-k}") int topK) {
+        this.hybridRetriever = hybridRetriever;
+        this.topK = topK;
+    }
 
     @Override
     public String name() {
@@ -56,15 +56,21 @@ public class SearchTool implements ToolDefinition {
             return ToolResult.fail(name(), "query 参数不能为空", System.currentTimeMillis() - start);
         }
 
-        float[] vec = embeddingService.embed(query);
-        List<VectorStore.Result> results = vectorStore.search(vec, topK);
+        List<SearchResult> results = hybridRetriever.retrieve(query, topK);
 
         if (results.isEmpty()) {
             return ToolResult.ok(name(), "未找到相关文档。", System.currentTimeMillis() - start);
         }
 
         String content = results.stream()
-                .map(r -> "【" + r.id() + " 相似度:" + String.format("%.2f", r.score()) + "】\n" + r.text())
+                .map(result -> "【"
+                        + result.id()
+                        + " "
+                        + result.scoreType()
+                        + ":"
+                        + String.format("%.3f", result.score())
+                        + "】\n"
+                        + result.effectiveText())
                 .collect(Collectors.joining("\n\n---\n\n"));
 
         return ToolResult.ok(name(), content, System.currentTimeMillis() - start);
