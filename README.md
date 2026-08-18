@@ -203,6 +203,5 @@ disconnect/Last-Event-ID，以及 MySQL 事务内写入 Outbox。
 
 ## 更多文档
 
-- [最终简历描述与面试问答](docs/resume-and-interview.md)
 - [压测与故障演练](docs/load-testing.md)
 - [前端工程说明](frontend/README.md)
