@@ -1,7 +1,7 @@
 # RAG Agent Platform
 
-面向 Java 后端与 AI 应用开发面试的完整 RAG Agent 项目。后端基于 Spring Boot
-3.3 / Java 17，前端基于 React 18 / TypeScript。项目保留自研检索算法，并把
+面向企业知识问答与业务自动化的 RAG Agent 平台。后端基于 Spring Boot 3.5 /
+Java 17，前端基于 React 18 / TypeScript。项目保留自研检索算法，并把
 流式输出、Agent Loop、认证、持久化、可观测性和容器部署接成可运行链路。
 
 ## 项目亮点（与实际代码一致）
@@ -174,7 +174,13 @@ Redis `requirepass`、全服务非 root + `read_only`/`cap_drop` 加固、资源
 | `/login` | JWT 登录与 Axios/SSE 自动携带 Authorization |
 
 主要接口：`POST /auth/login`、`POST /chat`、`GET /chat/stream`、
-`POST /agent/chat`、`GET /agent/tools`、`GET/POST/DELETE /admin/documents`。
+`POST /agent/chat`、`GET /agent/chat/stream`、`GET /agent/tools`、
+`GET/POST/DELETE /admin/documents`。
+
+`GET /agent/chat/stream` 为认证后的 Agent SSE 入口；当动态 MCP 工具执行时会输出
+`mcp_tool` 事件（server、tool、STARTED/SUCCEEDED/FAILED、elapsedMs 与脱敏错误）。
+普通 RAG SSE 的 `done` 事件包括 `firstTokenMs`、`totalElapsedMs` 与 Token 统计；
+当上游未提供 usage 时会明确写入 `tokenAccounting=estimated`。
 
 ## 数据职责与一致性
 
@@ -219,4 +225,9 @@ disconnect/Last-Event-ID，以及 MySQL 事务内写入 Outbox。
 ## 更多文档
 
 - [压测与故障演练](docs/load-testing.md)
+- [本机预生产验收手册](docs/preproduction-acceptance.md)
+- [部署说明](docs/deployment.md)
+- [平台架构说明](docs/architecture.md)
+- [生产验收报告](docs/production-acceptance-report.md)
+- [已知限制](docs/known-limitations.md)
 - [前端工程说明](frontend/README.md)

@@ -72,7 +72,16 @@ public class AgentExecutor {
     }
 
     public AgentResult execute(String query, String requestedSessionId) {
+        return execute(query, requestedSessionId, AgentExecutionListener.NOOP);
+    }
+
+    public AgentResult execute(
+            String query,
+            String requestedSessionId,
+            AgentExecutionListener listener) {
         String question = requireQuery(query);
+        AgentExecutionListener safeListener = listener == null
+                ? AgentExecutionListener.NOOP : listener;
         AuthenticatedUser currentUser = currentUserProvider.requireCurrentUser();
         String sessionId = authenticatedSessionService.resolveOrCreate(
                 requestedSessionId,
@@ -100,6 +109,8 @@ public class AgentExecutor {
                         toolCallId,
                         action.toolName(),
                         action.arguments());
+                safeListener.onToolStart(
+                        toolCallId, action.toolName(), action.arguments());
                 ToolCallRecord record = toolScheduler.dispatch(
                         toolCallId,
                         action.toolName(),
@@ -107,6 +118,7 @@ public class AgentExecutor {
                         currentUser.role(),
                         sessionId,
                         context.getToolHistory());
+                safeListener.onToolComplete(record);
                 context.addToolCall(record);
 
                 if (record.terminal()) {

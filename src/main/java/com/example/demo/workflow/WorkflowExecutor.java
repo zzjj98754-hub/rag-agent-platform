@@ -47,7 +47,7 @@ public class WorkflowExecutor {
         WorkflowRun initial = new WorkflowRun(id, code, WorkflowRun.Status.RUNNING, null,
                 input == null ? Map.of() : Map.copyOf(input), Map.of(), List.of(), Instant.now(), null, null);
         runs.put(id, initial);
-        persistence.createRun(initial, ownerId, sessionId);
+        persistence.createRun(initial, ownerId, sessionId, role);
         CompletableFuture.runAsync(() -> execute(
                 id, definition, initial.input(), role, sessionId, ownerId));
         return initial;
@@ -109,7 +109,9 @@ public class WorkflowExecutor {
                             ? exhausted.retryCount() : 0;
                     steps.add(new WorkflowRun.Step(node.id(), node.type(), WorkflowRun.Status.FAILED,
                             nodeInput, null, retryCount, ex.getMessage()));
-                    WorkflowRun failed = new WorkflowRun(id, definition.code(), WorkflowRun.Status.FAILED,
+                    WorkflowRun.Status status = shouldWaitForManual(node, ex)
+                            ? WorkflowRun.Status.WAITING_MANUAL : WorkflowRun.Status.FAILED;
+                    WorkflowRun failed = new WorkflowRun(id, definition.code(), status,
                             node.id(), input, Map.copyOf(values), List.copyOf(steps), current.startedAt(), Instant.now(), ex.getMessage());
                     persistence.saveStep(id, steps.get(steps.size() - 1));
                     save(failed);
@@ -134,12 +136,39 @@ public class WorkflowExecutor {
         long ownerId = persistence.ownerId(id);
         String sessionId = persistence.sessionId(id);
         CompletableFuture.runAsync(() -> execute(
-                id, definition, run.input(), UserRole.USER, sessionId, ownerId));
+                id, definition, run.input(), persistence.triggeredRole(id), sessionId, ownerId));
+    }
+
+    public WorkflowRun retryForUser(String id, long userId, UserRole role) {
+        requireOwner(id, userId, role);
+        WorkflowRun current = get(id);
+        if (current.status() != WorkflowRun.Status.WAITING_MANUAL
+                && current.status() != WorkflowRun.Status.FAILED) {
+            throw new IllegalStateException("Only failed Workflow runs can be retried");
+        }
+        WorkflowRun resumed = new WorkflowRun(current.id(), current.workflowCode(),
+                WorkflowRun.Status.RUNNING, current.currentNode(), current.input(), current.output(),
+                current.steps(), current.startedAt(), null, null);
+        save(resumed);
+        WorkflowDefinition definition = registry.get(current.workflowCode());
+        String sessionId = persistence.sessionId(id);
+        UserRole executionRole = persistence.triggeredRole(id);
+        CompletableFuture.runAsync(() -> execute(
+                id, definition, resumed.input(), executionRole, sessionId, persistence.ownerId(id)));
+        return resumed;
     }
 
     private void save(WorkflowRun run) {
         runs.put(run.id(), run);
         persistence.updateRun(run);
+    }
+
+    private boolean shouldWaitForManual(WorkflowNode node, Exception exception) {
+        if (!(exception instanceof WorkflowRetryPolicy.RetryExhaustedException)) {
+            return false;
+        }
+        Object retries = node.config().get("maxRetries");
+        return retries instanceof Number number && number.intValue() > 0;
     }
 
     private void requireOwner(String id, long userId, UserRole role) {

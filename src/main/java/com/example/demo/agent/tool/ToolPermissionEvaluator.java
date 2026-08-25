@@ -25,7 +25,7 @@ public class ToolPermissionEvaluator {
      */
     private static final Map<UserRole, Set<String>> ROLE_PERMISSIONS = Map.of(
             UserRole.ADMIN, Set.of("*"),
-            UserRole.ANALYST, Set.of("KNOWLEDGE_SEARCH", "CALCULATOR", "MCP_TOOL"),
+            UserRole.ANALYST, Set.of("KNOWLEDGE_SEARCH", "CALCULATOR", "MCP_TOOL", "BUSINESS_METRICS"),
             UserRole.USER, Set.of("KNOWLEDGE_SEARCH", "CALCULATOR"),
             UserRole.GUEST, Set.of("KNOWLEDGE_SEARCH")
     );

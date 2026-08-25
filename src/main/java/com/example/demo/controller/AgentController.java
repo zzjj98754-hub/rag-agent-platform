@@ -7,12 +7,16 @@ import com.example.demo.dto.AgentChatRequest;
 import com.example.demo.dto.ToolCallRequest;
 import com.example.demo.dto.ToolCallResponse;
 import com.example.demo.service.ToolCallService;
+import com.example.demo.service.AgentStreamingService;
 import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * Agent API 入口。Controller 仅负责协议适配，推理循环和工具调度均在 Service 层。
@@ -23,14 +27,17 @@ public class AgentController {
     private final AgentExecutor agentExecutor;
     private final ToolCallService toolCallService;
     private final ToolRegistry toolRegistry;
+    private final AgentStreamingService agentStreamingService;
 
     public AgentController(
             AgentExecutor agentExecutor,
             ToolCallService toolCallService,
-            ToolRegistry toolRegistry) {
+            ToolRegistry toolRegistry,
+            AgentStreamingService agentStreamingService) {
         this.agentExecutor = agentExecutor;
         this.toolCallService = toolCallService;
         this.toolRegistry = toolRegistry;
+        this.agentStreamingService = agentStreamingService;
     }
 
     /**
@@ -41,6 +48,13 @@ public class AgentController {
         return agentExecutor.execute(
                 request.getQuery(),
                 request.getSessionId());
+    }
+
+    @GetMapping(value = "/agent/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamChat(
+            @RequestParam String query,
+            @RequestParam(required = false) String sessionId) {
+        return agentStreamingService.stream(query, sessionId);
     }
 
     /**

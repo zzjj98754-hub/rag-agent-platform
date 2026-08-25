@@ -215,6 +215,7 @@ public class StreamingChatService implements StreamingChatUseCase {
                             "message", "正在生成回答..."));
 
             StringBuilder response = new StringBuilder();
+            metrics.setPrompt(prepared.prompt());
             metrics.startLlm();
             Disposable disposable = streamingLlmClient
                     .streamChat(prepared.prompt())
@@ -335,6 +336,11 @@ public class StreamingChatService implements StreamingChatUseCase {
             doneData.put(
                     "tokens",
                     metrics.estimatedTokens());
+            doneData.put("firstTokenMs", metrics.firstTokenMillis());
+            doneData.put("totalElapsedMs", metrics.totalElapsedMillis());
+            doneData.put("inputTokens", metrics.estimatedInputTokens());
+            doneData.put("outputTokens", metrics.estimatedTokens());
+            doneData.put("totalTokens", metrics.estimatedTotalTokens());
             doneData.put("tokenAccounting", "estimated");
             emit(
                     emitter,
@@ -536,11 +542,15 @@ public class StreamingChatService implements StreamingChatUseCase {
 
         private final AtomicReference<RagRequestObservation> observation =
                 new AtomicReference<>();
+        private final AtomicLong requestStartedAt = new AtomicLong();
         private final AtomicLong llmStartedAt = new AtomicLong();
+        private final AtomicLong firstTokenAt = new AtomicLong();
+        private final AtomicLong promptCharacterCount = new AtomicLong();
         private final AtomicLong characterCount = new AtomicLong();
         private final AtomicBoolean finished = new AtomicBoolean();
 
         private RagRequestObservation startRequest(String query) {
+            requestStartedAt.set(System.nanoTime());
             RagRequestObservation started =
                     observability.beginRequest(query);
             observation.set(started);
@@ -551,7 +561,13 @@ public class StreamingChatService implements StreamingChatUseCase {
             llmStartedAt.set(System.nanoTime());
         }
 
+        private void setPrompt(String prompt) {
+            promptCharacterCount.set(prompt == null ? 0
+                    : prompt.codePointCount(0, prompt.length()));
+        }
+
         private void recordToken(String token) {
+            firstTokenAt.compareAndSet(0, System.nanoTime());
             characterCount.addAndGet(
                     token.codePointCount(0, token.length()));
         }
@@ -586,10 +602,32 @@ public class StreamingChatService implements StreamingChatUseCase {
         }
 
         private long estimatedTokens() {
-            long characters = characterCount.get();
-            return characters == 0
-                    ? 0
-                    : Math.max(1, (characters + 1) / 2);
+            return estimateTokens(characterCount.get());
+        }
+
+        private long estimatedInputTokens() {
+            return estimateTokens(promptCharacterCount.get());
+        }
+
+        private long estimatedTotalTokens() {
+            return estimatedInputTokens() + estimatedTokens();
+        }
+
+        private long firstTokenMillis() {
+            long startedAt = llmStartedAt.get();
+            long firstAt = firstTokenAt.get();
+            return startedAt == 0 || firstAt == 0 ? -1
+                    : TimeUnit.NANOSECONDS.toMillis(firstAt - startedAt);
+        }
+
+        private long totalElapsedMillis() {
+            long startedAt = requestStartedAt.get();
+            return startedAt == 0 ? 0
+                    : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+        }
+
+        private long estimateTokens(long characters) {
+            return characters == 0 ? 0 : Math.max(1, (characters + 1) / 2);
         }
     }
 

@@ -97,6 +97,9 @@ class StreamingChatServiceTest {
 
         verify(completionService).complete(prepared, "你好");
         assertThat(body).contains("retry:3000", "event:token", "event:done");
+        assertThat(body).contains("firstTokenMs", "totalElapsedMs",
+                "inputTokens", "outputTokens", "totalTokens",
+                "tokenAccounting");
         assertThat(body).containsPattern("id:[0-9]+");
         assertThat(replayBuffer.eventsAfter("session-1", "0").stream()
                 .filter(event -> "token".equals(event.name()))

@@ -6,6 +6,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import com.example.demo.security.UserRole;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,7 +57,7 @@ public class WorkflowPersistenceService {
     }
 
     @Transactional
-    public void createRun(WorkflowRun run, long ownerId, String sessionId) {
+    public void createRun(WorkflowRun run, long ownerId, String sessionId, UserRole role) {
         Map<String, Object> definition = jdbc.queryForMap("""
                 SELECT id, version FROM workflow_definition
                 WHERE code=? ORDER BY version DESC LIMIT 1
@@ -66,13 +67,13 @@ public class WorkflowPersistenceService {
         jdbc.update("""
                 INSERT INTO workflow_instance
                     (instance_id, definition_id, version, status, lock_version,
-                     current_node, input, output, triggered_by, owner_id,
+                     current_node, input, output, triggered_by, triggered_role, owner_id,
                      session_id, error, create_time, update_time)
                 VALUES (?, ?, ?, ?, 0, ?, CAST(? AS JSON), CAST(? AS JSON),
-                        ?, ?, ?, ?, NOW(3), NOW(3))
+                        ?, ?, ?, ?, ?, NOW(3), NOW(3))
                 """, run.id(), definitionId, definitionVersion,
                 run.status().name(), run.currentNode(),
-                write(run.input()), write(run.output()), ownerId, ownerId,
+                write(run.input()), write(run.output()), ownerId, role.name(), ownerId,
                 sessionId, run.error());
     }
 
@@ -142,6 +143,13 @@ public class WorkflowPersistenceService {
         return jdbc.queryForObject(
                 "SELECT session_id FROM workflow_instance WHERE instance_id=?",
                 String.class, id);
+    }
+
+    public UserRole triggeredRole(String id) {
+        String value = jdbc.queryForObject(
+                "SELECT triggered_role FROM workflow_instance WHERE instance_id=?",
+                String.class, id);
+        return value == null ? UserRole.USER : UserRole.valueOf(value);
     }
 
     public List<String> recoverableRunIds() {

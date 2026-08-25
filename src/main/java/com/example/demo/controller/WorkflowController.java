@@ -61,9 +61,6 @@ public class WorkflowController {
     @PostMapping("/workflows/runs/{id}/retry")
     public Map<String, Object> retry(@PathVariable String id) {
         var user = currentUser.requireCurrentUser();
-        WorkflowRun run = executor.getForUser(id, user.id(), user.role());
-        WorkflowRun restarted = executor.run(run.workflowCode(), run.input(),
-                user.role(), "workflow-" + user.id(), user.id());
-        return Map.of("previousRunId", id, "run", restarted);
+        return Map.of("run", executor.retryForUser(id, user.id(), user.role()));
     }
 }
