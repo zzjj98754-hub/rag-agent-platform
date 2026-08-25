@@ -8,6 +8,7 @@ import com.example.demo.rag.SearchResult;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import com.example.demo.memory.ConversationSummaryService;
 
 /**
  * RAG 检索与 Prompt 构建服务，不负责调用模型或持久化回答。
@@ -20,6 +21,7 @@ public class RagPromptService {
     private final HybridRetriever hybridRetriever;
     private final RelevanceGate relevanceGate;
     private final CitationFormatter citationFormatter;
+    private final ConversationSummaryService summaries;
     private final int topK;
 
     public RagPromptService(
@@ -28,12 +30,14 @@ public class RagPromptService {
             HybridRetriever hybridRetriever,
             RelevanceGate relevanceGate,
             CitationFormatter citationFormatter,
+            ConversationSummaryService summaries,
             @Value("${app.rag.top-k}") int topK) {
         this.sessionService = sessionService;
         this.queryRewriter = queryRewriter;
         this.hybridRetriever = hybridRetriever;
         this.relevanceGate = relevanceGate;
         this.citationFormatter = citationFormatter;
+        this.summaries = summaries;
         this.topK = topK;
     }
 
@@ -41,6 +45,12 @@ public class RagPromptService {
         String history = sessionId == null
                 ? ""
                 : sessionService.formatHistory(sessionId);
+        if (sessionId != null) {
+            var summary = summaries.maybeCompress(sessionId);
+            if (summary != null) {
+                history = summary.text() + '\n' + history;
+            }
+        }
         String rewrittenQuery = queryRewriter.rewrite(query, history);
         List<SearchResult> rawDocuments =
                 hybridRetriever.retrieve(rewrittenQuery, topK);

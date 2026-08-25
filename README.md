@@ -129,25 +129,40 @@ STREAMING_LLM_MODEL=<支持 stream=true 的模型>
 
 ### Docker Compose
 
+**本机/开发模式(一条命令,零配置,内置 dev 默认值):**
+
 ```bash
-cp .env.example .env       # PowerShell: Copy-Item .env.example .env
-docker compose up --build
+docker compose up -d --build
 ```
 
-服务入口：
+服务入口:
 
 | 服务 | 默认地址 |
 |---|---|
 | Nginx / Web UI / API | `http://localhost:8080` |
-| Prometheus | `http://localhost:9091` |
-| Grafana | `http://localhost:3000` |
+| Prometheus | `http://localhost:9091`(仅 dev 发布) |
+| Grafana | `http://localhost:3000`(仅 dev 发布,凭据 `admin/admin`,改 `.env`) |
 
 请求路径是 `Nginx -> frontend`，`/api/*` 则由 Nginx 去掉 `/api` 前缀后代理到
 backend；SSE 代理关闭缓冲。MySQL、Redis 和 Backend 默认只暴露在 Compose 内网。
-Grafana 默认本地凭据为 `admin/admin`，应在 `.env` 中修改。
 
-本地 Compose 默认使用 `dev` 以支持无外部 Key 演示；部署时设置
-`SPRING_PROFILES_ACTIVE=prod` 并配置真实 LLM 地址与密钥。
+**生产模式(单机 Linux VPS,base + overlay):**
+
+```bash
+cp .env.prod.example .env.prod    # 填写全部 REPLACE 项
+bash scripts/gen-grafana-htpasswd.sh   # 生成 Grafana 第一道门凭据
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+    --env-file .env.prod --profile prod up -d --build
+# 服务器防火墙只开放 80/tcp(+SSH);全部端口随 overlay 收敛
+```
+
+生产形态差异:`SPRING_PROFILES_ACTIVE=prod`、全部密钥 `${VAR:?}` fail-fast(缺失即拒绝启动,
+绝不带默认值上线)、prometheus/grafana 不再发布主机端口、Grafana 经
+`http://<host>/grafana` 子路径访问(basic_auth + Grafana 自身登录双门)、
+Redis `requirepass`、全服务非 root + `read_only`/`cap_drop` 加固、资源限额、日志轮转、
+每日 MySQL 备份 sidecar 与 node-exporter 主机指标(需 Docker Compose ≥ 2.24)。
+
+镜像均为本地构建,不依赖任何镜像仓库。基础镜像固定 minor 版本;digest 级固定留作后续增强。
 
 ## 页面与接口
 

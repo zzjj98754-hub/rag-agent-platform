@@ -3,6 +3,9 @@ package com.example.demo.config;
 import com.example.demo.security.JwtAuthenticationFilter;
 import com.example.demo.security.RestAccessDeniedHandler;
 import com.example.demo.security.RestAuthenticationEntryPoint;
+import com.example.demo.governance.AuditLogFilter;
+import com.example.demo.governance.IdempotencyInterceptor;
+import com.example.demo.governance.RateLimitFilter;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,6 +25,9 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
+            RateLimitFilter rateLimitFilter,
+            IdempotencyInterceptor idempotencyInterceptor,
+            AuditLogFilter auditLogFilter,
             RestAuthenticationEntryPoint authenticationEntryPoint,
             RestAccessDeniedHandler accessDeniedHandler)
             throws Exception {
@@ -40,14 +46,19 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/auth/login", "/mock-llm/**", "/error").permitAll()
-                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers("/admin/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/mcp/servers/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/mcp/servers/**").hasRole("ADMIN")
                         .requestMatchers("/agent/**", "/chat/**").authenticated()
                         .anyRequest().authenticated())
                 .addFilterBefore(
                         jwtAuthenticationFilter,
-                        UsernamePasswordAuthenticationFilter.class);
+                        UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(rateLimitFilter, JwtAuthenticationFilter.class)
+                .addFilterAfter(idempotencyInterceptor, RateLimitFilter.class)
+                .addFilterAfter(auditLogFilter, IdempotencyInterceptor.class);
         return http.build();
     }
 }

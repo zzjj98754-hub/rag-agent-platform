@@ -440,9 +440,7 @@ public class DocumentIngestionService {
         Map<String, String> idToParentId = documentRegistry.getParentIds();
         Map<String, String> idToParentText = documentRegistry.getParentTexts();
 
-        bm25Index.rebuild(idToText);
-        bm25Index.setParentIds(idToParentId);
-        bm25Index.setParentTexts(idToParentText);
+        bm25Index.rebuild(idToText, idToParentId, idToParentText);
 
         log.debug("BM25 索引重建完成: {} 个 chunk", idToText.size());
     }

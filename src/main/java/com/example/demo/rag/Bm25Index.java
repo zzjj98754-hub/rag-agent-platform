@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +33,7 @@ public class Bm25Index {
 
     private static final double K1 = 1.2;
     private static final double B = 0.75;
+    private final ReentrantReadWriteLock indexLock = new ReentrantReadWriteLock();
 
     /** chunk ID → chunk 文本（Child 文本，用于检索） */
     private final Map<String, String> idToText = new LinkedHashMap<>();
@@ -64,16 +66,18 @@ public class Bm25Index {
      * 调用时机：启动时全量加载，或文档更新后重建。
      */
     public void index(Map<String, String> documents) {
-        clear();
-        if (documents.isEmpty()) {
-            log.warn("BM25 索引构建：输入文档为空");
-            return;
-        }
+        indexLock.writeLock().lock();
+        try {
+            clear();
+            if (documents.isEmpty()) {
+                log.warn("BM25 索引构建：输入文档为空");
+                return;
+            }
 
-        idToText.putAll(documents);
+            idToText.putAll(documents);
 
-        // 第一遍：分词 + 统计 TF + 文档长度
-        for (var entry : documents.entrySet()) {
+            // 第一遍：分词 + 统计 TF + 文档长度
+            for (var entry : documents.entrySet()) {
             String docId = entry.getKey();
             List<String> tokens = tokenize(entry.getValue());
             docLength.put(docId, tokens.size());
@@ -88,21 +92,41 @@ public class Bm25Index {
             for (String term : tf.keySet()) {
                 docFrequency.merge(term, 1, Integer::sum);
             }
-        }
+            }
 
-        avgDocLen = docLength.values().stream()
+            avgDocLen = docLength.values().stream()
                 .mapToInt(Integer::intValue)
                 .average()
                 .orElse(1.0);
 
-        log.info("BM25 索引构建完成：{} 个文档，{} 个唯一词项，平均文档长度 {} tokens",
-                idToText.size(), docFrequency.size(), String.format("%.1f", avgDocLen));
+            log.info("BM25 索引构建完成：{} 个文档，{} 个唯一词项，平均文档长度 {} tokens",
+                    idToText.size(), docFrequency.size(), String.format("%.1f", avgDocLen));
+        } finally {
+            indexLock.writeLock().unlock();
+        }
     }
 
     /** 重建索引（文档更新时调用） */
     public void rebuild(Map<String, String> documents) {
         log.info("BM25 索引重建：清空旧索引，新文档数 {}", documents.size());
         index(documents);
+    }
+
+    /** Atomically publishes index data and hierarchical parent mappings. */
+    public void rebuild(
+            Map<String, String> documents,
+            Map<String, String> parentIds,
+            Map<String, String> parentTexts) {
+        indexLock.writeLock().lock();
+        try {
+            index(documents);
+            idToParentId.clear();
+            idToParentId.putAll(parentIds);
+            idToParentText.clear();
+            idToParentText.putAll(parentTexts);
+        } finally {
+            indexLock.writeLock().unlock();
+        }
     }
 
     /** 清空全部索引数据 */
@@ -125,28 +149,33 @@ public class Bm25Index {
      * TF 分量 = tf * (k1+1) / (tf + k1 * (1-b + b * |d|/avgdl))
      */
     public List<ScoredDoc> search(String query, int topK) {
-        if (idToText.isEmpty() || query == null || query.isBlank()) {
-            return List.of();
-        }
+        indexLock.readLock().lock();
+        try {
+            if (idToText.isEmpty() || query == null || query.isBlank()) {
+                return List.of();
+            }
 
-        List<String> queryTerms = tokenize(query);
-        if (queryTerms.isEmpty()) {
-            return List.of();
-        }
+            List<String> queryTerms = tokenize(query);
+            if (queryTerms.isEmpty()) {
+                return List.of();
+            }
 
-        List<ScoredDoc> results = new ArrayList<>();
-        int N = idToText.size();
+            List<ScoredDoc> results = new ArrayList<>();
+            int N = idToText.size();
 
-        for (var docEntry : idToText.entrySet()) {
+            for (var docEntry : idToText.entrySet()) {
             String docId = docEntry.getKey();
             double score = computeScore(docId, queryTerms, N);
             if (score > 0) {
                 results.add(new ScoredDoc(docId, docEntry.getValue(), score));
             }
-        }
+            }
 
-        results.sort(Comparator.comparingDouble(ScoredDoc::bm25Score).reversed());
-        return results.subList(0, Math.min(topK, results.size()));
+            results.sort(Comparator.comparingDouble(ScoredDoc::bm25Score).reversed());
+            return List.copyOf(results.subList(0, Math.min(topK, results.size())));
+        } finally {
+            indexLock.readLock().unlock();
+        }
     }
 
     private double computeScore(String docId, List<String> queryTerms, int N) {
@@ -181,34 +210,46 @@ public class Bm25Index {
     // ==================== 工具方法 ====================
 
     public int size() {
-        return idToText.size();
+        indexLock.readLock().lock();
+        try { return idToText.size(); } finally { indexLock.readLock().unlock(); }
     }
 
     public String getText(String id) {
-        return idToText.get(id);
+        indexLock.readLock().lock();
+        try { return idToText.get(id); } finally { indexLock.readLock().unlock(); }
     }
 
     /** 设置 Parent ID 映射（层级 Chunk 模式下调用） */
     public void setParentIds(Map<String, String> parentIds) {
-        this.idToParentId.clear();
-        this.idToParentId.putAll(parentIds);
+        indexLock.writeLock().lock();
+        try {
+            this.idToParentId.clear();
+            this.idToParentId.putAll(parentIds);
+        } finally { indexLock.writeLock().unlock(); }
     }
 
     /** 设置 Parent 文本映射（层级 Chunk 模式下调用） */
     public void setParentTexts(Map<String, String> parentTexts) {
-        this.idToParentText.clear();
-        this.idToParentText.putAll(parentTexts);
+        indexLock.writeLock().lock();
+        try {
+            this.idToParentText.clear();
+            this.idToParentText.putAll(parentTexts);
+        } finally { indexLock.writeLock().unlock(); }
     }
 
     /** 返回 Parent ID，若不存在则返回 chunk ID 自身 */
     public String getParentId(String id) {
-        return idToParentId.getOrDefault(id, id);
+        indexLock.readLock().lock();
+        try { return idToParentId.getOrDefault(id, id); } finally { indexLock.readLock().unlock(); }
     }
 
     /** 返回 Prompt 中使用的文本：优先 Parent 上下文，否则 Child 自身 */
     public String getTextForPrompt(String id) {
-        String parent = idToParentText.get(id);
-        return parent != null ? parent : idToText.get(id);
+        indexLock.readLock().lock();
+        try {
+            String parent = idToParentText.get(id);
+            return parent != null ? parent : idToText.get(id);
+        } finally { indexLock.readLock().unlock(); }
     }
 
     // ==================== 分词 ====================

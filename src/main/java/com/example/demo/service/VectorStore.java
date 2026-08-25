@@ -92,6 +92,13 @@ public interface VectorStore {
         return search(queryEmbedding.values(), topK);
     }
 
+    default List<Result> search(
+            String queryText,
+            EmbeddingService.EmbeddingVector queryEmbedding,
+            int topK) {
+        return search(queryEmbedding, topK);
+    }
+
     /** 删除指定 ID 的向量（文档更新/删除时用于清理旧 Chunk） */
     void delete(String id);
 

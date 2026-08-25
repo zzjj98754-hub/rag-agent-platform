@@ -1,3 +1,5 @@
+# 基础编排:本机/Windows 一键验证形态(dev 默认值,零配置可启动)
+# 生产形态:docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up -d --build
 name: demo00-rag
 
 services:
@@ -27,12 +29,14 @@ services:
       - backend
 
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack-server:7.4.0-v2
     restart: unless-stopped
-    command:
-      - redis-server
-      - --appendonly
-      - "yes"
+    # REDIS_PASSWORD 非空时启用 requirepass(纵深防御:网络隔离 ≠ 认证);为空则纯 AOF 模式
+    command: sh -c 'if [ -n "$${REDIS_PASSWORD}" ]; then exec redis-stack-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"; else exec redis-stack-server --appendonly yes; fi'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # healthcheck 的 redis-cli ping 凭此自动带 AUTH(redis-cli 原生支持该变量)
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-}
     volumes:
       - redis-data:/data
     healthcheck:
@@ -44,7 +48,7 @@ services:
       - backend
 
   app:
-    image: demo00-rag-agent:local
+    image: ${APP_IMAGE:-demo00-rag-agent:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -52,7 +56,7 @@ services:
     init: true
     depends_on:
       mysql:
-        condition: service_healthy
+        condition: service_healthy   # Flyway 门禁:MySQL 必须可写
       redis:
         condition: service_healthy
     environment:
@@ -62,9 +66,20 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-demo00-local-password}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # 优雅停机:SIGTERM 排干在途 SSE 流后退出,stop_grace_period 30s 作 SIGKILL 兜底
+      SERVER_SHUTDOWN: graceful
+      SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: 25s
       RAG_DOCS_PATH: /app/docs
       APP_INGESTION_STARTUP_ENABLED: ${STARTUP_INGESTION_ENABLED:-false}
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      APP_VECTOR_STORE_BACKEND: ${VECTOR_STORE_BACKEND:-redis-stack}
+      MCP_ENABLED: ${MCP_ENABLED:-true}
+      SPRING_AI_ENABLED: ${SPRING_AI_ENABLED:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      # dev 默认指向 mock LLM(与 application-dev.yml 一致);prod 由 overlay 强制注入
       STREAMING_LLM_URL: ${STREAMING_LLM_URL:-http://localhost:9090/mock-llm/stream}
       STREAMING_LLM_API_KEY: ${STREAMING_LLM_API_KEY:-}
       STREAMING_LLM_MODEL: ${STREAMING_LLM_MODEL:-default}
@@ -74,6 +89,7 @@ services:
       AGENT_LLM_MODEL: ${AGENT_LLM_MODEL:-deepseek-v4-flash}
       AGENT_LLM_THINKING_MODE: ${AGENT_LLM_THINKING_MODE:-disabled}
       JWT_SECRET: ${JWT_SECRET:-docker-local-jwt-secret-change-before-production-32bytes}
+      # bootstrap admin 仅 dev 便利启用;prod overlay 默认关闭
       APP_SECURITY_BOOTSTRAP_ADMIN_ENABLED: ${BOOTSTRAP_ADMIN_ENABLED:-true}
       APP_SECURITY_BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
       APP_SECURITY_BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-docker-admin-change-me}
@@ -99,20 +115,28 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     expose:
-      - "80"
+      - "8080"
     networks:
       - frontend
 
   nginx:
-    image: nginx:1.27-alpine
+    image: nginxinc/nginx-unprivileged:1.27-alpine
     restart: unless-stopped
     depends_on:
-      - frontend
-      - app
+      frontend:
+        condition: service_healthy   # 静态服务就绪(镜像内 HEALTHCHECK)
+      app:
+        condition: service_healthy   # 避免 Flyway 迁移期间的 502 窗口
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "${WEB_PORT:-8080}:8080"
     volumes:
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - frontend
       - backend
@@ -125,9 +149,10 @@ services:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     ports:
-      - "${PROMETHEUS_PORT:-9091}:9090"
+      - "${PROMETHEUS_PORT:-9091}:9090"   # 仅 dev 发布;prod overlay 用 ports: !reset 移除
     networks:
-      - backend
+      - backend      # 抓取 app:9090
+      - monitoring
 
   grafana:
     image: grafana/grafana:11.4.0
@@ -143,9 +168,16 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "${GRAFANA_PORT:-3000}:3000"      # 仅 dev 发布;prod 经 nginx /grafana 子路径访问
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks:
-      - backend
+      - monitoring   # Prometheus 数据源
+      - frontend     # prod 下被 nginx /grafana 反代
 
 volumes:
   mysql-data:
@@ -153,9 +185,12 @@ volumes:
   app-logs:
   prometheus-data:
   grafana-data:
+  mysql-backups:      # mysql-backup sidecar 写入(prod overlay)
 
 networks:
   backend:
-    driver: bridge
+    driver: bridge    # 数据面:mysql/redis/app
   frontend:
-    driver: bridge
+    driver: bridge    # 边缘面:nginx/frontend/grafana
+  monitoring:
+    driver: bridge    # 监控面:prometheus/grafana

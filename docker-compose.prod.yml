@@ -1,0 +1,236 @@
+# 生产 overlay:在基础编排之上叠加加固、资源限制、备份与主机指标。
+# 用法(Linux VPS):
+#   bash scripts/gen-grafana-htpasswd.sh   # 生成 docker/nginx/.htpasswd(第一道门)
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod --profile prod up -d --build
+# 要求 Docker Compose >= 2.24(ports: !reset / volumes: !override)。
+# 所有密钥均 `${VAR:?message}` fail-fast:缺失即拒绝启动,绝不带默认值上线。
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  mysql:
+    environment:
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set in .env.prod}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set in .env.prod}
+    mem_limit: 1024m
+    cpus: 1.0
+    logging: *default-logging
+    stop_grace_period: 60s   # InnoDB 刷盘窗口
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  redis:
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.prod}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.prod}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-4gb}
+    command: sh -c 'exec redis-stack-server --appendonly yes --requirepass "$${REDIS_PASSWORD}" --maxmemory "$${REDIS_MAXMEMORY}" --maxmemory-policy noeviction'
+    mem_limit: ${REDIS_CONTAINER_MEMORY:-5g}
+    cpus: 1.0
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  app:
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      # ---- 必需密钥(fail-fast)----
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (>= 32 bytes)}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set in .env.prod}
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env.prod}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:?EMBEDDING_API_KEY must be set in .env.prod}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY must be set in .env.prod}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:?OPENAI_BASE_URL must be set in .env.prod}
+      OPENAI_MODEL: ${OPENAI_MODEL:?OPENAI_MODEL must be set in .env.prod}
+      APP_VECTOR_STORE_BACKEND: ${VECTOR_STORE_BACKEND:-redis-stack}
+      MCP_ENABLED: ${MCP_ENABLED:-true}
+      MCP_CONFIG_ENCRYPTION_KEY: ${MCP_CONFIG_ENCRYPTION_KEY:?MCP_CONFIG_ENCRYPTION_KEY must be set}
+      # application-prod.yml 无默认值,不注入则启动失败 —— 显式 fail-fast
+      LLM_URL: ${LLM_URL:?LLM_URL must be set in .env.prod}
+      LLM_MODEL: ${LLM_MODEL:?LLM_MODEL must be set in .env.prod}
+      STREAMING_LLM_URL: ${STREAMING_LLM_URL:?STREAMING_LLM_URL must be set in .env.prod}
+      STREAMING_LLM_API_KEY: ${STREAMING_LLM_API_KEY:?STREAMING_LLM_API_KEY must be set in .env.prod}
+      STREAMING_LLM_MODEL: ${STREAMING_LLM_MODEL:?STREAMING_LLM_MODEL must be set in .env.prod}
+      # ---- 生产默认关闭引导管理员;密码仍强制提供,防止"忘记设置"的静默风险 ----
+      APP_SECURITY_BOOTSTRAP_ADMIN_ENABLED: ${BOOTSTRAP_ADMIN_ENABLED:-false}
+      APP_SECURITY_BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?BOOTSTRAP_ADMIN_PASSWORD must be set in .env.prod}
+      # nginx 同源部署下无跨域请求:空 = 不发送 CORS 头 = 浏览器阻断任何跨域来源
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+    volumes: !override
+      - type: bind
+        source: ${RAG_DOCS_PATH:?RAG_DOCS_PATH must be set in .env.prod}
+        target: /app/docs
+        read_only: true
+      - app-logs:/app/logs
+    mem_limit: 1024m
+    cpus: 1.0
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  frontend:
+    mem_limit: 128m
+    cpus: 0.25
+    logging: *default-logging
+    read_only: true
+    tmpfs:
+      - /tmp    # nginx-unprivileged 的 pid/cache 目录
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "${WEB_PORT:-80}:8080"
+      - "${TLS_PORT:-443}:8443"
+    volumes:
+      # glob include 片段:grafana 子路径 + basic_auth 第一道门(default.conf 由 base 挂载)
+      - ./docker/nginx/grafana-auth.conf:/etc/nginx/grafana-auth/grafana-auth.conf:ro
+      - ./docker/nginx/.htpasswd:/etc/nginx/.htpasswd:ro
+      - ./docker/nginx/default.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot:ro
+    mem_limit: 128m
+    cpus: 0.25
+    logging: *default-logging
+    read_only: true
+    tmpfs:
+      - /tmp
+    stop_grace_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  prometheus:
+    ports: !reset []        # 不再发布主机端口:Grafana 是唯一消费方,走私有网络
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+    volumes: !override
+      - ./docker/prometheus/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    mem_limit: 256m
+    cpus: 0.5
+    logging: *default-logging
+    read_only: true          # 写入全部落在 prometheus-data 卷内
+    stop_grace_period: 60s   # TSDB 刷盘窗口
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  grafana:
+    ports: !reset []        # 仅经 nginx /grafana 子路径访问
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env.prod}
+      # 子路径部署:root_url 与 nginx /grafana location 保持一致
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+    mem_limit: 256m
+    cpus: 0.5
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # ---- 每日全量备份 sidecar:mysqldump --single-transaction + gzip,保留 7 天 ----
+  mysql-backup:
+    image: mysql:8.0
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_started   # 首次备份在 24h 后,无需等健康
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-demo00}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set in .env.prod}
+      TZ: ${TZ:-Asia/Hong_Kong}
+    volumes:
+      - ./docker/mysql-backup/backup.sh:/backup.sh:ro
+      - mysql-backups:/backups
+    entrypoint: ["sh", "/backup.sh"]
+    mem_limit: 128m
+    cpus: 0.1
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend
+
+  # ---- 主机指标采集:需要宿主网络命名空间,仅 Linux(prod profile 显式启用)----
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    profiles: ["prod"]
+    command:
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro,rslave
+    mem_limit: 64m
+    cpus: 0.1
+    logging: *default-logging
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - monitoring
+
+  certbot:
+    image: certbot/certbot:v3.2.0
+    restart: unless-stopped
+    profiles: ["tls"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"]
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+
+  mcp-http-example:
+    build:
+      context: ./examples/mcp-servers
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    profiles: ["mcp-example"]
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3001/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  letsencrypt:
+  certbot-webroot:

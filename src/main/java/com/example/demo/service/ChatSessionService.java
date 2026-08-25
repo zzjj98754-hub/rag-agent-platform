@@ -15,6 +15,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,6 +46,8 @@ public class ChatSessionService {
 
     private final Map<String, List<Message>> fallbackStore = new ConcurrentHashMap<>();
     private final Map<String, Long> fallbackOwners = new ConcurrentHashMap<>();
+    private final Map<String, Long> fallbackCreatedAt = new ConcurrentHashMap<>();
+    private final long fallbackTtlMillis;
 
     public record Message(String role, String content, long timestamp) {}
 
@@ -56,6 +60,12 @@ public class ChatSessionService {
         this.historyPersistenceService = historyPersistenceService;
         this.maxHistory = maxHistory;
         this.sessionTtlSeconds = sessionTtlSeconds;
+        this.fallbackTtlMillis = Math.max(60_000L, sessionTtlSeconds * 1000L);
+        Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r, "chat-fallback-cleaner");
+            thread.setDaemon(true);
+            return thread;
+        }).scheduleAtFixedRate(this::cleanupFallback, 1, 1, TimeUnit.HOURS);
     }
 
     /**
@@ -78,6 +88,7 @@ public class ChatSessionService {
             fallbackStore.putIfAbsent(
                     sessionId,
                     Collections.synchronizedList(new ArrayList<>()));
+            fallbackCreatedAt.put(sessionId, System.currentTimeMillis());
         }
         if (userId != null) {
             fallbackOwners.put(sessionId, userId);
@@ -298,6 +309,26 @@ public class ChatSessionService {
         }
     }
 
+    /** Clear only the Redis hot projection; MySQL remains the source of truth. */
+    public void clearHotHistory(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) return;
+        try {
+            redisTemplate.delete(messageKey(sessionId));
+        } catch (Exception e) {
+            log.debug("清理 Redis 会话热窗口失败 | session={}: {}", sessionId, e.getMessage());
+        }
+    }
+
+    private void cleanupFallback() {
+        long cutoff = System.currentTimeMillis() - fallbackTtlMillis;
+        fallbackCreatedAt.entrySet().removeIf(entry -> {
+            if (entry.getValue() >= cutoff) return false;
+            fallbackStore.remove(entry.getKey());
+            fallbackOwners.remove(entry.getKey());
+            return true;
+        });
+    }
+
     private List<Message> readRedisHistory(String sessionId) {
         List<String> raw = redisTemplate.opsForList().range(messageKey(sessionId), 0, -1);
         if (raw == null || raw.isEmpty()) {
@@ -350,6 +381,7 @@ public class ChatSessionService {
     }
 
     private void appendToFallback(String sessionId, Message message) {
+        fallbackCreatedAt.putIfAbsent(sessionId, System.currentTimeMillis());
         List<Message> messages = fallbackStore.computeIfAbsent(
                 sessionId,
                 key -> Collections.synchronizedList(new ArrayList<>()));

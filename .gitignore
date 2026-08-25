@@ -34,7 +34,10 @@ build/
 
 # Local deployment secrets
 .env
+.env.prod
 !.env.example
+!.env.prod.example
+docker/nginx/.htpasswd
 
 # Local performance-test reports
 load-test-results/

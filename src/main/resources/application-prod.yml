@@ -1,4 +1,6 @@
 app:
+  spring-ai:
+    enabled: "${SPRING_AI_ENABLED:true}"
   llm:
     url: "${LLM_URL}"
     model: "${LLM_MODEL}"
@@ -6,3 +8,12 @@ app:
       url: "${STREAMING_LLM_URL}"
       api-key: "${STREAMING_LLM_API_KEY}"
       model: "${STREAMING_LLM_MODEL}"
+
+spring:
+  ai:
+    openai:
+      api-key: "${OPENAI_API_KEY}"
+      base-url: "${OPENAI_BASE_URL}"
+      chat:
+        options:
+          model: "${OPENAI_MODEL}"

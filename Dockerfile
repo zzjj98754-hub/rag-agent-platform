@@ -27,8 +27,9 @@ RUN addgroup -S spring \
 
 WORKDIR /app
 
+ARG JAR_FILE=target/demo00-0.0.1-SNAPSHOT.jar
 COPY --from=build --chown=spring:spring \
-    /workspace/target/demo00-0.0.1-SNAPSHOT.jar /app/app.jar
+    /workspace/${JAR_FILE} /app/app.jar
 
 USER spring:spring
 

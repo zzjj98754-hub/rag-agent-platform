@@ -39,24 +39,24 @@ public class ToolRegistry {
     }
 
     /** 按名称查找工具 */
-    public ToolDefinition get(String name) {
+    public synchronized ToolDefinition get(String name) {
         return tools.get(name);
     }
 
     /** 工具是否存在 */
-    public boolean contains(String name) {
+    public synchronized boolean contains(String name) {
         return tools.containsKey(name);
     }
 
     /** 获取所有工具名 */
-    public Set<String> toolNames() {
+    public synchronized Set<String> toolNames() {
         return Set.copyOf(tools.keySet());
     }
 
     /**
      * 返回 OpenAI function 对象列表。
      */
-    public List<Map<String, Object>> listToolsForLLM() {
+    public synchronized List<Map<String, Object>> listToolsForLLM() {
         return tools.values().stream()
                 .map(schemaConverter::toFunctionSchema)
                 .toList();
@@ -65,10 +65,29 @@ public class ToolRegistry {
     /**
      * 返回 OpenAI Chat Completions API 可直接使用的 tools 数组。
      */
-    public List<Map<String, Object>> listOpenAiTools() {
+    public synchronized List<Map<String, Object>> listOpenAiTools() {
         return tools.values().stream()
                 .map(schemaConverter::toOpenAiTool)
                 .toList();
+    }
+
+    /** Register a runtime tool discovered from an MCP server or Skill. */
+    public synchronized void register(ToolDefinition tool) {
+        if (tool == null || tool.name() == null || tool.name().isBlank()) {
+            throw new IllegalArgumentException("工具名称不能为空");
+        }
+        schemaConverter.toFunctionSchema(tool);
+        ToolDefinition existing = tools.putIfAbsent(tool.name(), tool);
+        if (existing != null && existing != tool) {
+            throw new IllegalStateException("存在重复工具名称: " + tool.name());
+        }
+        log.info("已注册运行时工具: {} (权限: {})", tool.name(), tool.requiredPermissions());
+    }
+
+    public synchronized void unregister(String name) {
+        if (name != null) {
+            tools.remove(name);
+        }
     }
 
 }

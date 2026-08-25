@@ -42,6 +42,16 @@ export interface RagTraceData {
   timings: RagTimings
 }
 
+export interface AgentStreamPlan {
+  steps: string[]
+}
+
+export interface McpToolEvent {
+  server: string
+  tool: string
+  status: 'started' | 'completed' | 'failed'
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'

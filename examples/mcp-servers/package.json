@@ -1,0 +1,14 @@
+{
+  "name": "demo00-mcp-examples",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "stdio": "node stdio-server.js",
+    "http": "node streamable-http-server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.4",
+    "express": "^5.1.0",
+    "zod": "^3.25.76"
+  }
+}

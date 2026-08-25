@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 
@@ -18,6 +19,10 @@ import reactor.core.publisher.Flux;
  * OpenAI Compatible SSE 协议适配器，只负责请求模型与解析增量 token。
  */
 @Service
+@ConditionalOnProperty(
+        name = "app.spring-ai.enabled",
+        havingValue = "false",
+        matchIfMissing = true)
 public class OpenAiStreamingLlmClient implements StreamingLlmClient {
 
     private static final Logger log =

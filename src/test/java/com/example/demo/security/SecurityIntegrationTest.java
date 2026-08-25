@@ -13,6 +13,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -20,12 +21,15 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
+// Boot 3.3 测试默认禁用指标导出(management.defaults.metrics.export.enabled=false),
+// 需显式 @AutoConfigureObservability 才能在测试上下文注册 /actuator/prometheus 端点
 @SpringBootTest(properties = {
         "app.ingestion.startup-enabled=false",
         "app.security.jwt.secret=integration-test-jwt-secret-with-more-than-thirty-two-bytes",
         "management.health.redis.enabled=false"
 })
 @AutoConfigureMockMvc
+@AutoConfigureObservability
 @Transactional
 class SecurityIntegrationTest {
 
@@ -81,6 +85,9 @@ class SecurityIntegrationTest {
         String adminToken = login(adminUsername, "password-123");
 
         mockMvc.perform(get("/actuator/health"))
+                .andExpect(status().isOk());
+        // Prometheus 抓取端点放行:仅暴露指标序列,生产环境仅内网可达
+        mockMvc.perform(get("/actuator/prometheus"))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/actuator/metrics"))
                 .andExpect(status().isUnauthorized());

@@ -209,7 +209,7 @@ public class HybridRetriever {
         if (queryVec.isEmpty()) {
             return List.of();
         }
-        return vectorStore.search(queryVec, topK).stream()
+        return vectorStore.search(query, queryVec, topK).stream()
                 .map(VectorStore.Result::id)
                 .toList();
     }

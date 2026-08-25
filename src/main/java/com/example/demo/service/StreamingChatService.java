@@ -182,6 +182,12 @@ public class StreamingChatService implements StreamingChatUseCase {
                     Map.of("sessionId", sessionId));
             emit(
                     emitter,
+                    "plan",
+                    Map.of("steps", List.of(
+                            "query_rewrite", "hybrid_retrieval",
+                            "relevance_gate", "generation", "citation_validation")));
+            emit(
+                    emitter,
                     "context",
                     Map.of(
                             "phase", "retrieving",
@@ -189,6 +195,10 @@ public class StreamingChatService implements StreamingChatUseCase {
             PreparedRagPrompt prepared = observability.withObservation(
                     observation,
                     () -> ragPromptService.prepare(query, sessionId));
+            emit(
+                    emitter,
+                    "summary",
+                    Map.of("applied", prepared.prompt().contains("历史摘要：")));
             emit(
                     emitter,
                     "citations",
@@ -325,6 +335,7 @@ public class StreamingChatService implements StreamingChatUseCase {
             doneData.put(
                     "tokens",
                     metrics.estimatedTokens());
+            doneData.put("tokenAccounting", "estimated");
             emit(
                     emitter,
                     "done",

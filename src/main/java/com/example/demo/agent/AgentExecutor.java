@@ -3,6 +3,7 @@ package com.example.demo.agent;
 import com.example.demo.agent.AgentResult.Status;
 import com.example.demo.agent.AgentResult.ToolTrace;
 import com.example.demo.agent.tool.ToolRegistry;
+import com.example.demo.agent.tool.ToolOutputSanitizer;
 import com.example.demo.agent.tool.ToolScheduler;
 import com.example.demo.agent.tool.ToolScheduler.StopReason;
 import com.example.demo.agent.tool.ToolScheduler.ToolCallRecord;
@@ -15,12 +16,10 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
 
 /**
  * 真正的 Agent 推理执行循环：决策 -> 工具 -> Observation -> 再决策 -> 最终回答。
  */
-@Service
 public class AgentExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentExecutor.class);
@@ -31,6 +30,7 @@ public class AgentExecutor {
     private final ChatSessionService chatSessionService;
     private final CurrentUserProvider currentUserProvider;
     private final AuthenticatedSessionService authenticatedSessionService;
+    private final ToolOutputSanitizer outputSanitizer;
     private final int maxSteps;
 
     public AgentExecutor(
@@ -40,6 +40,7 @@ public class AgentExecutor {
             ChatSessionService chatSessionService,
             CurrentUserProvider currentUserProvider,
             AuthenticatedSessionService authenticatedSessionService,
+            ToolOutputSanitizer outputSanitizer,
             @Value("${app.agent.max-steps}") int maxSteps) {
         this.llmClient = llmClient;
         this.toolRegistry = toolRegistry;
@@ -47,7 +48,27 @@ public class AgentExecutor {
         this.chatSessionService = chatSessionService;
         this.currentUserProvider = currentUserProvider;
         this.authenticatedSessionService = authenticatedSessionService;
+        this.outputSanitizer = outputSanitizer;
         this.maxSteps = Math.max(1, maxSteps);
+    }
+
+    AgentExecutor(
+            AgentLlmClient llmClient,
+            ToolRegistry toolRegistry,
+            ToolScheduler toolScheduler,
+            ChatSessionService chatSessionService,
+            CurrentUserProvider currentUserProvider,
+            AuthenticatedSessionService authenticatedSessionService,
+            int maxSteps) {
+        this(
+                llmClient,
+                toolRegistry,
+                toolScheduler,
+                chatSessionService,
+                currentUserProvider,
+                authenticatedSessionService,
+                new ToolOutputSanitizer(12_000),
+                maxSteps);
     }
 
     public AgentResult execute(String query, String requestedSessionId) {
@@ -156,7 +177,9 @@ public class AgentExecutor {
             return "工具 " + record.toolName() + " 未返回结果。";
         }
         if (record.result().success()) {
-            return "工具 " + record.toolName() + " 执行结果：" + record.result().content();
+            return "工具 " + record.toolName() + " 执行结果："
+                    + outputSanitizer.forModel(
+                            record.toolName(), record.result().content());
         }
         return "工具 " + record.toolName() + " 执行失败：" + record.result().error();
     }

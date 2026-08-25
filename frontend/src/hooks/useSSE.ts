@@ -14,6 +14,9 @@ interface StreamHandlers {
   onToken: (content: string) => void
   onCitations: (items: Citation[]) => void
   onTrace: (trace: RagTraceData) => void
+  onPlan?: (steps: string[]) => void
+  onMcpTool?: (payload: { server: string; tool: string; status: string }) => void
+  onSummary?: (applied: boolean) => void
   onDone: (payload: {
     sessionId: string
     length: number
@@ -82,6 +85,18 @@ export function useSSE() {
       source.addEventListener('trace', (event) => {
         const data = parseEvent<RagTraceData>(event)
         if (data) handlers.onTrace(data)
+      })
+      source.addEventListener('plan', (event) => {
+        const data = parseEvent<{ steps: string[] }>(event)
+        if (data) handlers.onPlan?.(data.steps ?? [])
+      })
+      source.addEventListener('mcp_tool', (event) => {
+        const data = parseEvent<{ server: string; tool: string; status: string }>(event)
+        if (data) handlers.onMcpTool?.(data)
+      })
+      source.addEventListener('summary', (event) => {
+        const data = parseEvent<{ applied: boolean }>(event)
+        if (data) handlers.onSummary?.(data.applied)
       })
       source.addEventListener('token', (event) => {
         const data = parseEvent<{ content: string }>(event)

@@ -4,6 +4,7 @@ import java.util.Locale;
 
 public enum UserRole {
     ADMIN,
+    ANALYST,
     USER,
     GUEST;
 

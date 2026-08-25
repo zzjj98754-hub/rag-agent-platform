@@ -1,6 +1,8 @@
+# dev 与 prod 共享的抓取配置;prod 由 overlay 替换为 prometheus.prod.yml(追加 node-exporter)
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  scrape_timeout: 10s
 
 scrape_configs:
   - job_name: demo00-backend

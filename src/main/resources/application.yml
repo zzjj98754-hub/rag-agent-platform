@@ -35,6 +35,13 @@ spring:
     encoding: UTF-8
     validate-on-migrate: true
     clean-disabled: true
+  ai:
+    openai:
+      api-key: "${OPENAI_API_KEY:local-disabled-key}"
+      base-url: "${OPENAI_BASE_URL:https://api.openai.com}"
+      chat:
+        options:
+          model: "${OPENAI_MODEL:gpt-4o-mini}"
 
 server:
   port: 9090
@@ -58,7 +65,27 @@ app:
     async:
       default-timeout-ms: 300000
   document:
-    allowed-extensions: txt,md,pdf
+    allowed-extensions: txt,md,pdf,docx,xlsx
+  spring-ai:
+    enabled: "${SPRING_AI_ENABLED:false}"
+  mcp:
+    enabled: "${MCP_ENABLED:true}"
+    connect-timeout-ms: 3000
+    request-timeout-ms: 30000
+    max-output-chars: 12000
+    allowed-commands: node,npx,java,python,python3
+    config-encryption-key: "${MCP_CONFIG_ENCRYPTION_KEY:}"
+  skill:
+    enabled: "${SKILL_ENABLED:true}"
+    max-prompt-chars: 12000
+  workflow:
+    enabled: "${WORKFLOW_ENABLED:true}"
+    max-nodes: 64
+    default-timeout-ms: 30000
+  governance:
+    rate-limit-per-minute: 60
+    quota-monthly-tokens: 1000000
+    idempotency-ttl-seconds: 86400
   llm:
     connect-timeout: 3
     read-timeout: 30
@@ -83,6 +110,7 @@ app:
   session:
     max-history: 40
     ttl: 604800
+    summary-threshold: 40
   outbox:
     poll-interval-ms: 500
     batch-size: 50
@@ -114,6 +142,8 @@ app:
       password: "${BOOTSTRAP_ADMIN_PASSWORD:}"
   vector-store:
     backend: in-memory
+    index-name: "${VECTOR_INDEX_NAME:demo00-rag-bge-large-zh-v1-5}"
+    prefix: "${VECTOR_INDEX_PREFIX:demo00:rag:v1:}"
   rag:
     top-k: 3
     relevance-thresholds:

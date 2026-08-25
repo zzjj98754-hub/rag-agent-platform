@@ -1,6 +1,7 @@
 package com.example.demo.config;
 
 import com.example.demo.service.InMemoryVectorStore;
+import com.example.demo.service.RedisStackVectorStore;
 import com.example.demo.service.VectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,11 +23,13 @@ public class VectorStoreConfig {
     @Primary
     public VectorStore vectorStore(
             @Value("${app.vector-store.backend}") String backend,
-            @Qualifier("inMemoryVectorStore") InMemoryVectorStore inMemory) {
-        if (!"in-memory".equalsIgnoreCase(backend)) {
-            throw new IllegalArgumentException(
+            @Qualifier("inMemoryVectorStore") InMemoryVectorStore inMemory,
+            @Qualifier("redisStackVectorStore") RedisStackVectorStore redisStack) {
+        return switch (backend.trim().toLowerCase()) {
+            case "in-memory", "memory" -> inMemory;
+            case "redis", "redis-stack", "redis_stack" -> redisStack;
+            default -> throw new IllegalArgumentException(
                     "不支持的 VectorStore 后端: " + backend);
-        }
-        return inMemory;
+        };
     }
 }

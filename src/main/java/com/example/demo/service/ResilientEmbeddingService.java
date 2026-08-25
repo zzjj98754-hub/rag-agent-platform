@@ -16,6 +16,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.embedding.Embedding;
+import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.embedding.EmbeddingRequest;
+import org.springframework.ai.embedding.EmbeddingResponse;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,7 +36,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Primary
-public class ResilientEmbeddingService implements EmbeddingService {
+public class ResilientEmbeddingService implements EmbeddingService, EmbeddingModel {
 
     private static final Logger log = LoggerFactory.getLogger(ResilientEmbeddingService.class);
 
@@ -99,6 +104,26 @@ public class ResilientEmbeddingService implements EmbeddingService {
     @Override
     public float[] embed(String text) {
         return embedWithMetadata(text).values();
+    }
+
+    @Override
+    public float[] embed(Document document) {
+        return embed(getEmbeddingContent(document));
+    }
+
+    @Override
+    public EmbeddingResponse call(EmbeddingRequest request) {
+        List<float[]> vectors = embedBatch(request.getInstructions());
+        List<Embedding> embeddings = new ArrayList<>(vectors.size());
+        for (int index = 0; index < vectors.size(); index++) {
+            embeddings.add(new Embedding(vectors.get(index), index));
+        }
+        return new EmbeddingResponse(embeddings);
+    }
+
+    @Override
+    public int dimensions() {
+        return dimension();
     }
 
     @Override

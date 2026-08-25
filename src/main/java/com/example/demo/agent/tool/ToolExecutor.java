@@ -9,26 +9,30 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
 /**
  * 工具执行器：只负责在线程隔离和超时边界内执行已经完成鉴权的工具。
  */
-@Component
 public class ToolExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(ToolExecutor.class);
 
     private final ExecutorService executor;
     private final long globalTimeoutMs;
+    private final ToolOutputSanitizer outputSanitizer;
 
     public ToolExecutor(
-            @Qualifier("agentToolExecutor") ExecutorService executor,
-            @Value("${app.agent.step-timeout-ms}") long globalTimeoutMs) {
+            ExecutorService executor,
+            long globalTimeoutMs,
+            ToolOutputSanitizer outputSanitizer) {
         this.executor = executor;
         this.globalTimeoutMs = Math.max(1, globalTimeoutMs);
+        this.outputSanitizer = outputSanitizer;
+    }
+
+    /** Backwards-compatible constructor for unit tests and embedded callers. */
+    public ToolExecutor(ExecutorService executor, long globalTimeoutMs) {
+        this(executor, globalTimeoutMs, new ToolOutputSanitizer(12_000));
     }
 
     public ToolResult execute(ToolDefinition tool, Map<String, Object> params) {
@@ -46,7 +50,7 @@ public class ToolExecutor {
             ToolResult result = future.get(timeoutMs, TimeUnit.MILLISECONDS);
             return result == null
                     ? ToolResult.fail(tool.name(), "工具未返回结果", elapsed(start))
-                    : result;
+                    : sanitize(result);
         } catch (TimeoutException e) {
             future.cancel(true);
             log.error("工具执行超时 | tool={} timeout={}ms", tool.name(), timeoutMs);
@@ -67,5 +71,12 @@ public class ToolExecutor {
 
     private long elapsed(long start) {
         return System.currentTimeMillis() - start;
+    }
+
+    private ToolResult sanitize(ToolResult result) {
+        if (!result.success()) return result;
+        return new ToolResult(true,
+                outputSanitizer.sanitize(result.toolName(), result.content()),
+                null, result.toolName(), result.elapsedMs());
     }
 }

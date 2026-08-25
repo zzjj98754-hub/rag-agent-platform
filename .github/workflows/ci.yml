@@ -1,0 +1,76 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root-ci-password
+          MYSQL_DATABASE: demo00
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot-ci-password"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+      redis:
+        image: redis/redis-stack-server:7.4.0-v2
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping" --health-interval=5s
+          --health-timeout=3s --health-retries=10
+    env:
+      MYSQL_URL: jdbc:mysql://127.0.0.1:3306/demo00?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: root-ci-password
+      SPRING_AI_ENABLED: "false"
+      APP_VECTOR_STORE_BACKEND: in-memory
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Backend tests and retrieval gate
+        run: ./mvnw -B -ntp test
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm ci && npm run build
+      - name: Compose validation
+        env:
+          MYSQL_PASSWORD: ci-mysql-password
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          REDIS_PASSWORD: ci-redis-password
+          JWT_SECRET: ci-jwt-secret-at-least-thirty-two-bytes
+          EMBEDDING_API_KEY: ci-placeholder
+          LLM_URL: https://example.invalid/v1/chat/completions
+          LLM_MODEL: ci-model
+          STREAMING_LLM_URL: https://example.invalid/v1/chat/completions
+          STREAMING_LLM_API_KEY: ci-placeholder
+          STREAMING_LLM_MODEL: ci-model
+          BOOTSTRAP_ADMIN_PASSWORD: ci-admin-password
+          GRAFANA_ADMIN_PASSWORD: ci-grafana-password
+          RAG_DOCS_PATH: ./docker/docs
+          MCP_CONFIG_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+      - name: Build application image
+        run: docker build -t demo00-rag-agent:${{ github.sha }} .
+      - name: Dependency and image vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: demo00-rag-agent:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
