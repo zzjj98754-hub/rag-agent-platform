@@ -20,7 +20,8 @@ LABEL org.opencontainers.image.title="demo00-rag-agent" \
       org.opencontainers.image.description="Spring Boot RAG Agent Platform" \
       org.opencontainers.image.source="local"
 
-RUN addgroup -S spring \
+RUN apk upgrade --no-cache \
+    && addgroup -S spring \
     && adduser -S spring -G spring \
     && mkdir -p /app/logs /app/docs \
     && chown -R spring:spring /app
