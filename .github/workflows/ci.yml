@@ -54,6 +54,9 @@ jobs:
           REDIS_PASSWORD: ci-redis-password
           JWT_SECRET: ci-jwt-secret-at-least-thirty-two-bytes
           EMBEDDING_API_KEY: ci-placeholder
+          OPENAI_API_KEY: ci-placeholder
+          OPENAI_BASE_URL: https://example.invalid
+          OPENAI_MODEL: ci-model
           LLM_URL: https://example.invalid/v1/chat/completions
           LLM_MODEL: ci-model
           STREAMING_LLM_URL: https://example.invalid/v1/chat/completions
