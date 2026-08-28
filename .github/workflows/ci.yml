@@ -68,7 +68,7 @@ jobs:
       - name: Build application image
         run: docker build -t demo00-rag-agent:${{ github.sha }} .
       - name: Dependency and image vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: demo00-rag-agent:${{ github.sha }}
           severity: CRITICAL,HIGH
