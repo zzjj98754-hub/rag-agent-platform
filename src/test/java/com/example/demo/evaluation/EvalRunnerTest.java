@@ -341,8 +341,9 @@ public class EvalRunnerTest {
         while (vectorStore.size() == 0 && System.currentTimeMillis() < deadline) {
             Thread.sleep(200);
         }
-        // 再等 BM25 索引重建完成（在 ingestAll 最后才 rebuildBm25）
-        while (bm25Index.search("Java", 1).isEmpty() && System.currentTimeMillis() < deadline) {
+        // 再等 BM25 索引重建完成（在 ingestAll 最后才 rebuildBm25）。
+        // 使用索引大小而不是特定关键词，避免 CI 的脱敏样例文档不含 "Java" 时误等超时。
+        while (bm25Index.size() == 0 && System.currentTimeMillis() < deadline) {
             Thread.sleep(500);
         }
         log.info("入库就绪: vectorStore.size={}, bm25 索引可用", vectorStore.size());
