@@ -177,6 +177,19 @@ Redis `requirepass`、全服务非 root + `read_only`/`cap_drop` 加固、资源
 `POST /agent/chat`、`GET /agent/chat/stream`、`GET /agent/tools`、
 `GET/POST/DELETE /admin/documents`。
 
+学习型异步索引入口为 `POST /admin/documents/upload/async`（multipart `file`），随后用
+`GET /admin/documents/status/{taskId}` 轮询。它演示 `Document(PROCESSING) + Outbox`
+同事务写入；`INDEX_KAFKA_ENABLED=true` 时 Relay 发布到 Kafka、消费者完成切分/向量化，
+否则在本地消费者执行，便于零中间件启动。父/子 Chunk 关系同时保存在 `document_chunk`。
+Graph 演示复用持久化 Workflow checkpoint：`GET /workflows/approvals` 查看高风险暂停项，
+`POST /workflows/runs/{id}/approval` body `{"approved":true}` 审批并恢复，`false` 拒绝。
+
+固定的 RAG 审批 Graph 位于 `POST /graph/rag/runs`（body: `{"query":"...","highRisk":true}`）；
+它按“检索 → 方案 → 风险分支 → 审批/工具 → 验证”保存 `RagGraphState` checkpoint。使用
+`GET /graph/rag/approvals` 查看待审批项，再调用 `POST /graph/rag/runs/{id}/approval`。
+`POST /admin/evaluations/retrieval` 会执行内置 30 条检索回归问题并输出 BM25 与 Hybrid 的
+Recall@3、MRR@3、NDCG@3。
+
 `GET /agent/chat/stream` 为认证后的 Agent SSE 入口；当动态 MCP 工具执行时会输出
 `mcp_tool` 事件（server、tool、STARTED/SUCCEEDED/FAILED、elapsedMs 与脱敏错误）。
 普通 RAG SSE 的 `done` 事件包括 `firstTokenMs`、`totalElapsedMs` 与 Token 统计；
