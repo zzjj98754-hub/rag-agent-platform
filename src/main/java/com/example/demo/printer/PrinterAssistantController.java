@@ -70,12 +70,12 @@ public class PrinterAssistantController {
     @PutMapping("/admin/applications/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
     public PrinterApplicationService.ApplicationView status(@PathVariable Long id, @Valid @RequestBody StatusBody body) {
-        return applications.updateStatus(id, new PrinterApplicationService.UpdateStatus(body.status(), body.processingNote()));
+        return applications.updateStatus(id, new PrinterApplicationService.UpdateStatus(body.status(), body.processingNote(), body.expectedVersion()));
     }
 
     public record QaBody(Long productId, @NotBlank @Size(max = 2000) String question) {}
     public record ApplicationBody(Long productId, @NotBlank @Size(max = 2000) String question,
                                   @NotBlank @Size(max = 8000) String troubleshootingSteps,
                                   @Size(max = 2000) String additionalNote) {}
-    public record StatusBody(@NotBlank String status, @Size(max = 2000) String processingNote) {}
+    public record StatusBody(@NotBlank String status, @Size(max = 2000) String processingNote, Integer expectedVersion) {}
 }

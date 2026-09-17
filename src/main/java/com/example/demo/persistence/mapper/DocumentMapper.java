@@ -20,5 +20,8 @@ public interface DocumentMapper {
             @Param("filePath") String filePath,
             @Param("status") String status);
 
+    int updateStatusByFilePathAndVersion(@Param("filePath") String filePath,
+            @Param("documentVersion") int documentVersion, @Param("status") String status);
+
     int deleteById(@Param("id") Long id);
 }

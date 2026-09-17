@@ -76,7 +76,9 @@ public class DocumentIndexTaskService {
     public void consume(Map<String, Object> payload) {
         String fileName = String.valueOf(payload.get("fileName"));
         String filePath = String.valueOf(payload.get("filePath"));
-        String content = String.valueOf(payload.get("content"));
+        String eventContent = payload.get("content") == null ? null : String.valueOf(payload.get("content"));
+        int eventVersion = ((Number) payload.getOrDefault("documentVersion", 0)).intValue();
+        String eventHash = payload.get("contentHash") == null ? null : String.valueOf(payload.get("contentHash"));
         Long creatorId = ((Number) payload.getOrDefault("creatorId", -1L)).longValue();
         // Replayed or cross-instance messages may have no local progress record.
         String taskId = String.valueOf(payload.get("taskId"));
@@ -86,14 +88,35 @@ public class DocumentIndexTaskService {
             taskId = null;
         } else if (!documents.claimTask(taskId, workerId)) return;
         try {
-            IngestionResult result = ingestion.ingestOne(fileName, content, creatorId < 0 ? null : creatorId);
+            var document = documents.findByFilePath(filePath);
+            // Old non-persistent fixtures/messages have no version contract. Keep this
+            // compatibility path; every persisted upload includes version and hash.
+            if (document == null && eventVersion == 0) {
+                IngestionResult legacy = ingestion.ingestOne(fileName, eventContent == null ? "" : eventContent,
+                        creatorId < 0 ? null : creatorId);
+                if (!legacy.getFailed().isEmpty()) throw new IllegalStateException("文档入库失败: " + legacy.getFailed().get(0).reason());
+                registry.getChunkMetadata(fileName).forEach(elasticsearch::index);
+                if (taskId != null) documents.finishTask(taskId, "SUCCEEDED", null, null);
+                return;
+            }
+            if (document == null || (eventVersion > 0 && document.getDocumentVersion() != eventVersion)
+                    || (eventHash != null && !eventHash.equalsIgnoreCase(document.getContentHash()))) {
+                throw new IllegalStateException("索引事件版本或内容指纹已过期: " + fileName);
+            }
+            if (eventContent != null && !eventContent.isBlank()
+                    && !eventContent.equals(document.getContent())) {
+                throw new IllegalStateException("索引事件正文与持久化正文不一致: " + fileName);
+            }
+            IngestionResult result = ingestion.ingestPersistedVersion(document);
             if (!result.getFailed().isEmpty()) {
                 throw new IllegalStateException("文档入库失败: " + result.getFailed().get(0).reason());
             }
             registry.getChunkMetadata(fileName).forEach(elasticsearch::index);
-            if (taskId != null) { documents.finishTask(taskId, "SUCCEEDED", null, null); documents.markIndexed(filePath); }
+            if (taskId != null) { documents.finishTask(taskId, "SUCCEEDED", null, null); documents.markIndexed(filePath, document.getDocumentVersion()); }
         } catch (RuntimeException ex) {
-            if (taskId != null) { documents.finishTask(taskId, "FAILED", "INDEX_ERROR", ex.getMessage()); documents.markFailed(filePath); }
+            if (taskId != null) { documents.finishTask(taskId, "FAILED", "INDEX_ERROR", ex.getMessage());
+                var current = documents.findByFilePath(filePath);
+                if (current != null && (eventVersion == 0 || current.getDocumentVersion() == eventVersion)) documents.markFailed(filePath, current.getDocumentVersion()); }
             throw ex;
         }
     }

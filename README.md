@@ -258,3 +258,6 @@ disconnect/Last-Event-ID，以及 MySQL 事务内写入 Outbox。
 - [生产验收报告](docs/production-acceptance-report.md)
 - [已知限制](docs/known-limitations.md)
 - [前端工程说明](frontend/README.md)
+## Printer after-sales verification note
+
+The async document path preserves the persisted body and document version through indexing and rejects stale or mismatched events. Run `./mvnw test` (or `.\mvnw.cmd test` in PowerShell) before demonstrating the flow. The dev profile uses a deterministic mock LLM and local retrieval; Elasticsearch, Kafka, Redis, and an external model require their configured services and are not implied by a successful local test.

@@ -6,6 +6,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,16 +32,24 @@ public class PrinterApplicationService {
         require(command.question(), "question", 2000);
         require(command.troubleshootingSteps(), "troubleshootingSteps", 8000);
         optional(command.additionalNote(), "additionalNote", 2000);
+        String normalizedKey = idempotencyKey.trim();
+        String fingerprint = fingerprint(command);
+        List<String> fingerprints = jdbc.query("SELECT request_fingerprint FROM after_sales_application WHERE user_id=? AND idempotency_key=?",
+                (rs, row) -> rs.getString(1), user.id(), normalizedKey);
+        if (!fingerprints.isEmpty() && fingerprints.get(0) != null && !fingerprint.equals(fingerprints.get(0))) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,
+                    "同一 Idempotency-Key 对应了不同请求");
+        }
         String number = "PA" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
                 + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
         jdbc.update("""
                 INSERT INTO after_sales_application
                     (application_no, user_id, product_id, question, troubleshooting_steps,
-                     additional_note, status, idempotency_key)
-                VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?)
+                     additional_note, status, idempotency_key, request_fingerprint)
+                VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
                 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
                 """, number, user.id(), command.productId(), command.question().trim(),
-                command.troubleshootingSteps().trim(), blankToNull(command.additionalNote()), idempotencyKey.trim());
+                command.troubleshootingSteps().trim(), blankToNull(command.additionalNote()), normalizedKey, fingerprint);
         Long id = jdbc.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
         return requireOwned(id, user);
     }
@@ -65,11 +76,26 @@ public class PrinterApplicationService {
             throw new IllegalArgumentException("status 只能是 PENDING、PROCESSING 或 COMPLETED");
         }
         optional(command.processingNote(), "processingNote", 2000);
-        if (jdbc.update("UPDATE after_sales_application SET status = ?, processing_note = ? WHERE id = ?",
-                command.status(), blankToNull(command.processingNote()), id) == 0) {
-            throw new ResourceNotFoundException("售后申请不存在");
+        ApplicationView current = requireAny(id);
+        if (!allowedTransition(current.status(), command.status())) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,
+                    "非法售后状态转换: " + current.status() + " -> " + command.status());
         }
+        int changed = jdbc.update("UPDATE after_sales_application SET status = ?, processing_note = ?, version=version+1 WHERE id = ? AND version = ?",
+                command.status(), blankToNull(command.processingNote()), id, current.version());
+        if (changed == 0) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT, "申请已被其他管理员更新");
         return requireAny(id);
+    }
+
+    private boolean allowedTransition(String from, String to) {
+        return from.equals(to) || ("PENDING".equals(from) && "PROCESSING".equals(to))
+                || ("PROCESSING".equals(from) && "COMPLETED".equals(to));
+    }
+
+    private String fingerprint(CreateApplication command) {
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
+                (command.productId()+"|"+command.question().trim()+"|"+command.troubleshootingSteps().trim()+"|"+blankToNull(command.additionalNote())).getBytes(StandardCharsets.UTF_8))); }
+        catch (Exception e) { throw new IllegalStateException("请求指纹计算失败", e); }
     }
 
     private ApplicationView requireAny(Long id) {
@@ -82,7 +108,7 @@ public class PrinterApplicationService {
         return """
                 SELECT a.id, a.application_no, a.user_id, u.username, a.product_id,
                        p.product_code, p.model_name, a.question, a.troubleshooting_steps,
-                       a.additional_note, a.status, a.processing_note, a.create_time, a.update_time
+                       a.additional_note, a.status, a.processing_note, a.version, a.create_time, a.update_time
                 FROM after_sales_application a
                 JOIN printer_product p ON p.id = a.product_id
                 JOIN `user` u ON u.id = a.user_id
@@ -94,6 +120,7 @@ public class PrinterApplicationService {
                 rs.getString("username"), rs.getLong("product_id"), rs.getString("product_code"),
                 rs.getString("model_name"), rs.getString("question"), rs.getString("troubleshooting_steps"),
                 rs.getString("additional_note"), rs.getString("status"), rs.getString("processing_note"),
+                rs.getInt("version"),
                 rs.getObject("create_time", LocalDateTime.class), rs.getObject("update_time", LocalDateTime.class));
     }
 
@@ -116,9 +143,11 @@ public class PrinterApplicationService {
     private String blankToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
 
     public record CreateApplication(Long productId, String question, String troubleshootingSteps, String additionalNote) {}
-    public record UpdateStatus(String status, String processingNote) {}
+    public record UpdateStatus(String status, String processingNote, Integer expectedVersion) {
+        public UpdateStatus(String status, String processingNote) { this(status, processingNote, null); }
+    }
     public record ApplicationView(Long id, String applicationNo, Long userId, String username, Long productId,
                                   String productCode, String modelName, String question, String troubleshootingSteps,
                                   String additionalNote, String status, String processingNote,
-                                  LocalDateTime createTime, LocalDateTime updateTime) {}
+                                  int version, LocalDateTime createTime, LocalDateTime updateTime) {}
 }

@@ -58,6 +58,12 @@
         WHERE file_path = #{filePath}
     </update>
 
+    <update id="updateStatusByFilePathAndVersion">
+        UPDATE `document`
+        SET status = #{status}
+        WHERE file_path = #{filePath} AND document_version = #{documentVersion}
+    </update>
+
     <delete id="deleteById">
         DELETE FROM `document`
         WHERE id = #{id}

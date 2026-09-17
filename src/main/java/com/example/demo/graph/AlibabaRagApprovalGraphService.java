@@ -13,6 +13,8 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import com.example.demo.security.UserRole;
 import javax.sql.DataSource;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -25,8 +27,11 @@ import org.springframework.stereotype.Service;
 @ConditionalOnProperty(prefix = "app.graph.alibaba", name = "enabled", havingValue = "true")
 public class AlibabaRagApprovalGraphService {
     private final CompiledGraph graph;
+    private final JdbcTemplate jdbc;
+    private final ObjectMapper json = new ObjectMapper();
 
     public AlibabaRagApprovalGraphService(DataSource dataSource) {
+        this.jdbc = dataSource == null ? null : new JdbcTemplate(dataSource);
         try {
             StateGraph builder = new StateGraph();
             AsyncNodeAction plan = state -> CompletableFuture.completedFuture(
@@ -78,26 +83,67 @@ public class AlibabaRagApprovalGraphService {
     }
 
     public RagGraphState start(String query, boolean highRisk, long ownerId, UserRole role) {
-        return toState(run(query, !highRisk), ownerId, highRisk);
+        RagGraphState state = toState(run(query, !highRisk), ownerId, highRisk);
+        saveOwnership(state, ownerId);
+        return state;
     }
 
     public RagGraphState approveState(String runId, boolean approved, long ownerId, UserRole role) {
+        requireOwner(runId, ownerId, role);
         if (!approved) {
             Map<String, Object> current = state(runId);
-            return new RagGraphState(runId, String.valueOf(current.getOrDefault("query", "")),
+            RagGraphState rejected = new RagGraphState(runId, String.valueOf(current.getOrDefault("query", "")),
                     "REJECTED", "human_approval", true, "官方 Graph 审批拒绝", List.of(),
                     null, "审批拒绝", List.of("approval:rejected"));
+            saveOwnership(rejected, ownerId);
+            return rejected;
         }
-        return toState(approve(runId), ownerId, true);
+        RagGraphState state = toState(approve(runId), ownerId, true);
+        saveOwnership(state, ownerId);
+        return state;
     }
 
-    public Map<String, Object> state(String runId) {
+    public Map<String, Object> state(String runId, long ownerId, UserRole role) {
+        requireOwner(runId, ownerId, role);
         try {
+            if (jdbc != null) {
+                var rows = jdbc.queryForList("SELECT state FROM rag_graph_run WHERE run_id=? AND status='REJECTED'", runId);
+                if (!rows.isEmpty()) return readMap(String.valueOf(rows.get(0).get("state")));
+            }
             RunnableConfig config = RunnableConfig.builder().threadId(runId).build();
             return graph.getState(config).state().data();
         } catch (Exception e) {
             throw new IllegalArgumentException("Graph run 不存在", e);
         }
+    }
+
+    /** Compatibility for internal calls after ownership has already been checked. */
+    private Map<String, Object> state(String runId) {
+        RunnableConfig config = RunnableConfig.builder().threadId(runId).build();
+        return graph.getState(config).state().data();
+    }
+
+    private void requireOwner(String runId, long ownerId, UserRole role) {
+        if (jdbc == null) return;
+        var rows = jdbc.queryForList("SELECT owner_id FROM rag_graph_run WHERE run_id=?", runId);
+        if (rows.isEmpty()) throw new IllegalArgumentException("Graph run 不存在");
+        long actual = ((Number) rows.get(0).get("owner_id")).longValue();
+        if (role != UserRole.ADMIN && actual != ownerId) {
+            throw new org.springframework.security.access.AccessDeniedException("无权访问此流程");
+        }
+    }
+
+    private void saveOwnership(RagGraphState state, long ownerId) {
+        if (jdbc == null) return;
+        try {
+            String value = json.writeValueAsString(Map.of("runId", state.runId(), "query", state.query(), "status", state.status(), "currentNode", state.currentNode()));
+            jdbc.update("INSERT INTO rag_graph_run(run_id,owner_id,status,state,current_node,risk_level,pending_approval,version) VALUES(?,?,?,CAST(? AS JSON),?,?,?,0) ON DUPLICATE KEY UPDATE status=VALUES(status),state=VALUES(state),current_node=VALUES(current_node),pending_approval=VALUES(pending_approval),version=version+1", state.runId(), ownerId, state.status(), value, state.currentNode(), state.highRisk() ? "HIGH" : "LOW", "WAITING_APPROVAL".equals(state.status()));
+        } catch (Exception e) { throw new IllegalStateException("Graph ownership checkpoint failed", e); }
+    }
+
+    private Map<String, Object> readMap(String value) {
+        try { return json.readValue(value, new com.fasterxml.jackson.core.type.TypeReference<>() {}); }
+        catch (Exception e) { throw new IllegalStateException("Graph checkpoint 损坏", e); }
     }
 
     private RagGraphState toState(Map<String, Object> data, long ownerId, boolean highRisk) {

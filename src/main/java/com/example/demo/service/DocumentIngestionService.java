@@ -226,6 +226,28 @@ public class DocumentIngestionService {
         }
     }
 
+    /** Indexes a document version already persisted by the async request transaction. */
+    public IngestionResult ingestPersistedVersion(DocumentEntity document) {
+        if (document == null || document.getId() == null) throw new IllegalArgumentException("持久化文档不存在");
+        String content = document.getContent();
+        if (content == null || content.isBlank()) {
+            throw new IllegalStateException("文档正文不可恢复，请重新上传: " + document.getTitle());
+        }
+        if (!sha256Hex(content).equalsIgnoreCase(document.getContentHash())) {
+            throw new IllegalStateException("文档正文指纹不匹配，请重新上传: " + document.getTitle());
+        }
+        try {
+            IngestionResult result = ingestOneInternal(document.getTitle(), document.getFilePath(), content, false);
+            rebuildBm25();
+            buildLocalVocabulary();
+            reindexAllVectors();
+            verifyIndexState();
+            return result;
+        } catch (RuntimeException e) {
+            throw e;
+        }
+    }
+
     // ==================== 异步入库 ====================
 
     public String ingestConfiguredDocumentsAsync() {

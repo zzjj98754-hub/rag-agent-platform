@@ -91,12 +91,26 @@ public class DocumentPersistenceService {
 
     @Transactional
     public void markIndexed(String filePath) {
-        updateStatus(filePath, Status.INDEXED);
+        DocumentEntity document = findByFilePath(filePath);
+        if (document == null) throw new IllegalArgumentException("文档不存在: " + filePath);
+        markIndexed(filePath, document.getDocumentVersion());
+    }
+
+    @Transactional
+    public void markIndexed(String filePath, int documentVersion) {
+        updateStatus(filePath, documentVersion, Status.INDEXED);
     }
 
     @Transactional
     public void markFailed(String filePath) {
-        updateStatus(filePath, Status.FAILED);
+        DocumentEntity document = findByFilePath(filePath);
+        if (document == null) throw new IllegalArgumentException("文档不存在: " + filePath);
+        markFailed(filePath, document.getDocumentVersion());
+    }
+
+    @Transactional
+    public void markFailed(String filePath, int documentVersion) {
+        updateStatus(filePath, documentVersion, Status.FAILED);
     }
 
     public DocumentEntity findByFilePath(String filePath) {
@@ -134,10 +148,10 @@ public class DocumentPersistenceService {
         }
     }
 
-    private void updateStatus(String filePath, Status status) {
+    private void updateStatus(String filePath, int documentVersion, Status status) {
         String normalizedPath = requireText(filePath, "filePath", 512);
-        if (documentMapper.updateStatusByFilePath(normalizedPath, status.name()) == 0) {
-            throw new IllegalArgumentException("文档不存在: " + normalizedPath);
+        if (documentMapper.updateStatusByFilePathAndVersion(normalizedPath, documentVersion, status.name()) == 0) {
+            throw new IllegalStateException("文档版本已变化，拒绝更新状态: " + normalizedPath + "@" + documentVersion);
         }
     }
 

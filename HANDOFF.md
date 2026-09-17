@@ -547,3 +547,10 @@ npm run dev
 - Outbox 崩溃恢复：`findPending`/`claim` 现在会重新拾取 `PROCESSING` 且 `claim_until` 已过期的事件，避免 worker 崩溃造成永久卡死。
 - Kafka OTel propagation：`KafkaIndexEventPublisher` 向 `ProducerRecord` 注入 W3C traceparent，`KafkaDocumentIndexConsumer` 从 ConsumerRecord 提取并在任务处理期间恢复上下文；Maven compile 通过。真实 broker 联调仍待环境支持。
 - Elasticsearch VectorStore 条件装配：`VectorStoreConfig` 改为使用 `ObjectProvider`，避免 Elasticsearch 后端因内存实现被条件禁用而启动失败。
+# 2026-09-17 continuation
+
+- Fixed async document indexing so consumption preserves the persisted document version, body, and SHA-256 hash; stale events cannot update a newer version. Empty/mismatched body recovery fails explicitly and requests re-upload.
+- Added version-fenced document status updates and migration `V14__after_sales_concurrency_and_idempotency.sql` for after-sales request fingerprints, application versioning, and status-event storage. Application status now rejects illegal rollback and uses optimistic version protection.
+- Official Alibaba Graph reads and approvals now verify ownership through the MySQL checkpoint shadow; rejection is persisted. The feature flag remains the explicit enable switch.
+- Verification: `mvnw.cmd -Dtest=DocumentIndexTaskServiceTest,PrinterApplicationServiceIntegrationTest test` passed (9 tests). Full suite was running before the final changes; rerun `./mvnw test` before commit/push.
+- Known unverified integrations: real ES/Kafka/LLM, Redis, multi-node lease races, browser cancellation/SSE recovery. Do not claim these as passed.
