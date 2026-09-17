@@ -5,6 +5,9 @@ import {
   LogoutOutlined,
   MessageOutlined,
   RobotOutlined,
+  PrinterOutlined,
+  ProfileOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import { Avatar, Button, Layout, Menu, Tag, Typography } from 'antd'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -13,6 +16,16 @@ import { useAuth } from '../../store/AuthContext'
 const { Sider, Content } = Layout
 
 const navigation = [
+  {
+    key: '/printer-assistant',
+    icon: <PrinterOutlined />,
+    label: '打印机售后助手',
+  },
+  {
+    key: '/my-applications',
+    icon: <ProfileOutlined />,
+    label: '我的售后申请',
+  },
   {
     key: '/chat',
     icon: <MessageOutlined />,
@@ -34,6 +47,9 @@ export default function AppShell() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, logout } = useAuth()
+  const items = user?.role === 'ADMIN'
+    ? [...navigation, { key: '/admin/applications', icon: <SafetyCertificateOutlined />, label: '售后管理处理' }]
+    : navigation
 
   return (
     <Layout className="app-layout">
@@ -54,7 +70,7 @@ export default function AppShell() {
         <Menu
           mode="inline"
           selectedKeys={[location.pathname]}
-          items={navigation}
+          items={items}
           onClick={({ key }) => navigate(key)}
           className="app-menu"
         />

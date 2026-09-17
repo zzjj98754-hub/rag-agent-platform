@@ -29,15 +29,25 @@
                status, retry_count, next_retry_time, last_error,
                create_time, processed_time
         FROM outbox_event
-        WHERE status = 'PENDING' AND next_retry_time &lt;= CURRENT_TIMESTAMP(3)
+        WHERE (status = 'PENDING' AND next_retry_time &lt;= CURRENT_TIMESTAMP(3))
+           OR (status = 'PROCESSING' AND claim_until &lt; CURRENT_TIMESTAMP(3))
         ORDER BY id
         LIMIT #{limit}
     </select>
 
+    <update id="claim">
+        UPDATE outbox_event
+        SET status='PROCESSING', claimed_by=#{workerId},
+            claim_until=DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL #{leaseSeconds} SECOND)
+        WHERE id=#{id}
+          AND ((status='PENDING' AND next_retry_time &lt;= CURRENT_TIMESTAMP(3))
+            OR (status='PROCESSING' AND claim_until &lt; CURRENT_TIMESTAMP(3)))
+    </update>
+
     <update id="markProcessed">
         UPDATE outbox_event
         SET status = 'PROCESSED', processed_time = CURRENT_TIMESTAMP(3), last_error = NULL
-        WHERE id = #{id} AND status = 'PENDING'
+        WHERE id = #{id} AND status = 'PROCESSING'
     </update>
 
     <update id="markRetry">
@@ -46,6 +56,6 @@
             status = CASE WHEN retry_count + 1 &gt;= #{maxRetries} THEN 'DEAD' ELSE 'PENDING' END,
             next_retry_time = DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL #{delaySeconds} SECOND),
             last_error = LEFT(#{error}, 1000)
-        WHERE id = #{id} AND status = 'PENDING'
+        WHERE id = #{id} AND status = 'PROCESSING'
     </update>
 </mapper>

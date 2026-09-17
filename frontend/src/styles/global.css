@@ -207,6 +207,53 @@ input {
   padding: 28px 32px 32px;
 }
 
+.printer-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(360px, 1.2fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.printer-card {
+  border-color: #e6eaf2;
+  box-shadow: 0 8px 24px rgb(37 55 102 / 5%);
+}
+
+.model-hint {
+  min-height: 34px;
+  margin-bottom: 14px;
+  padding: 8px 10px;
+  color: #6d7790;
+  font-size: 12px;
+  background: #f7f9fd;
+  border-radius: 6px;
+}
+
+.model-hint .ant-tag {
+  margin-right: 8px;
+}
+
+.answer-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.application-card {
+  margin-top: 20px;
+}
+
+.muted-text {
+  color: #778096;
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .printer-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .page-header {
   display: flex;
   min-height: 72px;

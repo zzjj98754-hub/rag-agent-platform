@@ -61,7 +61,7 @@ Redis Stack、pgvector 或 Milvus。
 - Transactional Outbox：业务数据与 `outbox_event` 同事务写入，Relay 异步、幂等
   投影 Redis，失败退避重试，达到上限转 `DEAD`。缓存未及时更新时读取侧从 MySQL
   回填，实现最终一致性；
-- MDC TraceId、结构化滚动日志、Micrometer/Prometheus 指标；
+- MDC TraceId、结构化滚动日志、Micrometer/Prometheus 指标；RAG 阶段通过 Micrometer Observation 接入 OTel/OTLP，Langfuse 仍需外部 endpoint 验证；
 - Grafana Dashboard 展示 HTTP、RAG、LLM 延迟、Token 和错误数；
 - 后端与前端多阶段镜像，Compose 包含 Nginx、Frontend、Backend、MySQL、Redis、
   Prometheus、Grafana；
@@ -177,6 +177,20 @@ Redis `requirepass`、全服务非 root + `read_only`/`cap_drop` 加固、资源
 `POST /agent/chat`、`GET /agent/chat/stream`、`GET /agent/tools`、
 `GET/POST/DELETE /admin/documents`。
 
+### 打印机售后助手演示闭环
+
+开发 profile 增加了一个独立的最小业务演示：启动时会幂等读取
+`src/main/resources/demo-printer-docs/` 下的 6 份虚构 Markdown 资料，复用现有文档切分、BM25、Embedding 和向量索引；JVM 重启后会重新建立演示资料索引，不依赖 Redis 恢复向量。资料关联和售后申请保存在 MySQL 的 V13 表中。
+
+页面：`/printer-assistant` 型号选择与问答、`/my-applications` 我的申请、
+`/applications/:id` 申请详情、`/admin/applications` 管理处理。
+
+接口：`GET /printer-assistant/products`、`POST /printer-assistant/qa`、
+`POST/GET /printer-assistant/applications`、`GET /printer-assistant/applications/{id}`、
+`POST /printer-assistant/admin/initialize`、`GET /printer-assistant/admin/applications`、
+`PUT /printer-assistant/admin/applications/{id}/status`。售后创建要求
+`Idempotency-Key`，管理员初始化也可重复执行。所有型号、回答、引用和状态均来自接口、数据库和检索结果；该内容仅用于个人项目演示，不代表真实厂商服务。
+
 学习型异步索引入口为 `POST /admin/documents/upload/async`（multipart `file`），随后用
 `GET /admin/documents/status/{taskId}` 轮询。它演示 `Document(PROCESSING) + Outbox`
 同事务写入；`INDEX_KAFKA_ENABLED=true` 时 Relay 发布到 Kafka、消费者完成切分/向量化，
@@ -184,7 +198,7 @@ Redis `requirepass`、全服务非 root + `read_only`/`cap_drop` 加固、资源
 Graph 演示复用持久化 Workflow checkpoint：`GET /workflows/approvals` 查看高风险暂停项，
 `POST /workflows/runs/{id}/approval` body `{"approved":true}` 审批并恢复，`false` 拒绝。
 
-固定的 RAG 审批 Graph 位于 `POST /graph/rag/runs`（body: `{"query":"...","highRisk":true}`）；
+默认 RAG 审批流程位于 `POST /graph/rag/runs`（body: `{"query":"...","highRisk":true}`），并保留 MySQL checkpoint。官方 Spring AI Alibaba Graph 适配器位于 `AlibabaRagApprovalGraphService`，通过 `SPRING_AI_ALIBABA_GRAPH_ENABLED=true` 显式启用；当前仍未替换默认审批 API，也未绑定官方 checkpoint saver，详见 `HANDOFF.md`。
 它按“检索 → 方案 → 风险分支 → 审批/工具 → 验证”保存 `RagGraphState` checkpoint。使用
 `GET /graph/rag/approvals` 查看待审批项，再调用 `POST /graph/rag/runs/{id}/approval`。
 `POST /admin/evaluations/retrieval` 会执行内置 30 条检索回归问题并输出 BM25 与 Hybrid 的
@@ -203,7 +217,7 @@ Recall@3、MRR@3、NDCG@3。
 | Redis | 最近 20 轮（默认 40 条消息）上下文、会话元数据、回答缓存 | 高频低延迟访问与 TTL |
 | JVM | BM25、Local Embedding 词表、演示向量索引、SSE 重放 | 小规模低成本演示；重启可由文档重建 |
 
-Outbox 方案没有宣称解决所有分布式一致性问题：当前是单 Relay 轮询；生产多副本需
+Outbox 方案没有宣称解决所有分布式一致性问题：Relay 已使用数据库 claim/lease 防止多副本重复发布，并在租约过期后恢复；生产仍需
 增加事件抢占/分区、告警、DEAD 事件人工补偿和长期清理策略。
 
 ## 测试

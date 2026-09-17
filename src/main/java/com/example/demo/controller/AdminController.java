@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.MediaType;
 import java.util.List;
+import com.example.demo.persistence.entity.IndexTaskEntity;
 
 /**
  * 管理端点 —— 文档入库触发、状态查询、文档清单。
@@ -35,12 +36,15 @@ public class AdminController {
 
     private final DocumentIngestionService ingestionService;
     private final DocumentManagementService documentManagementService;
+    private final com.example.demo.service.DocumentIndexTaskService documentIndexTaskService;
 
     public AdminController(
             DocumentIngestionService ingestionService,
-            DocumentManagementService documentManagementService) {
+            DocumentManagementService documentManagementService,
+            com.example.demo.service.DocumentIndexTaskService documentIndexTaskService) {
         this.ingestionService = ingestionService;
         this.documentManagementService = documentManagementService;
+        this.documentIndexTaskService = documentIndexTaskService;
     }
 
     /** 同步全量入库 */
@@ -72,7 +76,26 @@ public class AdminController {
     @GetMapping("/documents/status/{taskId}")
     public Map<String, Object> getStatus(
         @NotBlank @Size(max = 64) @PathVariable String taskId) {
-        IngestionStatus status = ingestionService.requireTaskStatus(taskId);
+        IndexTaskEntity persisted = documentIndexTaskService.findTask(taskId);
+        if (persisted != null) {
+            Map<String, Object> response = new java.util.LinkedHashMap<>();
+            response.put("taskId", persisted.getTaskId());
+            response.put("documentId", persisted.getDocumentId());
+            response.put("status", persisted.getStatus());
+            int chunkCount = documentIndexTaskService.chunkCount(persisted.getDocumentId());
+            response.put("processedChunks", "SUCCEEDED".equals(persisted.getStatus()) ? chunkCount : 0);
+            response.put("totalChunks", chunkCount);
+            response.put("retryCount", persisted.getRetryCount());
+            response.put("failureCode", persisted.getFailureCode());
+            response.put("failureReason", persisted.getFailureReason());
+            response.put("createdAt", persisted.getCreatedAt());
+            response.put("startedAt", persisted.getStartedAt());
+            response.put("finishedAt", persisted.getFinishedAt());
+            return response;
+        }
+        IngestionStatus status;
+        try { status = documentIndexTaskService.status(taskId); }
+        catch (IllegalArgumentException ignored) { status = ingestionService.requireTaskStatus(taskId); }
         Map<String, Object> resp = new java.util.LinkedHashMap<>();
         resp.put("taskId", status.getTaskId());
         resp.put("state", status.getState().name());
@@ -94,6 +117,13 @@ public class AdminController {
         return resp;
     }
 
+    @PostMapping("/documents/tasks/{taskId}/retry")
+    public Map<String, Object> retry(@PathVariable String taskId) {
+        boolean accepted = documentIndexTaskService.retry(taskId);
+        if (!accepted) throw new IllegalStateException("任务不可重试或文档版本已变化");
+        return Map.of("taskId", taskId, "status", "RETRY_WAIT");
+    }
+
     /** 已索引文档清单 */
     @GetMapping("/documents")
     public Map<String, Object> listDocuments() {
@@ -110,6 +140,11 @@ public class AdminController {
     public DocumentUploadResponse uploadDocument(
             @RequestParam("file") MultipartFile file) {
         return documentManagementService.upload(file);
+    }
+
+    @PostMapping(value = "/documents/upload/async", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Map<String, Object> uploadDocumentAsync(@RequestParam("file") MultipartFile file) {
+        return documentManagementService.uploadAsync(file);
     }
 
     @DeleteMapping("/documents/{documentId}")

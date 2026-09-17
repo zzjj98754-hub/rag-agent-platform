@@ -30,7 +30,7 @@ export default function LoginPage() {
     try {
       await login(values.username, values.password)
       message.success('登录成功')
-      navigate('/chat', { replace: true })
+      navigate('/printer-assistant', { replace: true })
     } catch (requestError) {
       const apiError = axios.isAxiosError<ApiError>(requestError)
         ? requestError.response?.data

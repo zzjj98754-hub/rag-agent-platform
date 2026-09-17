@@ -20,6 +20,7 @@ class OutboxRelayTest {
         ChatCacheProjector projector = mock(ChatCacheProjector.class);
         OutboxEventEntity event = event(7L, 0);
         when(mapper.findPending(50)).thenReturn(List.of(event));
+        when(mapper.claim(org.mockito.ArgumentMatchers.eq(7L), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(60))).thenReturn(1);
 
         new OutboxRelay(mapper, projector, 50, 8, 5).relay();
 
@@ -33,6 +34,7 @@ class OutboxRelayTest {
         ChatCacheProjector projector = mock(ChatCacheProjector.class);
         OutboxEventEntity event = event(9L, 2);
         when(mapper.findPending(50)).thenReturn(List.of(event));
+        when(mapper.claim(org.mockito.ArgumentMatchers.eq(9L), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(60))).thenReturn(1);
         doThrow(new IllegalStateException("redis unavailable"))
                 .when(projector).project(event);
 

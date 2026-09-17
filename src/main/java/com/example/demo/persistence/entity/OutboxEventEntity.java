@@ -14,6 +14,8 @@ public class OutboxEventEntity {
     private String lastError;
     private LocalDateTime createTime;
     private LocalDateTime processedTime;
+    private String claimedBy;
+    private LocalDateTime claimUntil;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -37,4 +39,8 @@ public class OutboxEventEntity {
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
     public LocalDateTime getProcessedTime() { return processedTime; }
     public void setProcessedTime(LocalDateTime processedTime) { this.processedTime = processedTime; }
+    public String getClaimedBy() { return claimedBy; }
+    public void setClaimedBy(String claimedBy) { this.claimedBy = claimedBy; }
+    public LocalDateTime getClaimUntil() { return claimUntil; }
+    public void setClaimUntil(LocalDateTime claimUntil) { this.claimUntil = claimUntil; }
 }

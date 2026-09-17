@@ -5,6 +5,7 @@ import com.example.demo.observability.RagRequestObservation;
 import com.example.demo.observability.RagStage;
 import com.example.demo.service.EmbeddingService;
 import com.example.demo.service.VectorStore;
+import com.example.demo.service.ElasticsearchChunkIndexer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -42,7 +43,10 @@ public class HybridRetriever {
     private final Reranker reranker;
     private final Executor retrievalExecutor;
     private final RagObservability observability;
+    private final ElasticsearchChunkIndexer elasticsearch;
+    private final boolean elasticsearchEnabled;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public HybridRetriever(
             Bm25Index bm25Index,
             EmbeddingService embeddingService,
@@ -50,7 +54,10 @@ public class HybridRetriever {
             RrfFusion rrfFusion,
             Reranker reranker,
             @Qualifier("ragRetrievalExecutor") Executor retrievalExecutor,
-            RagObservability observability) {
+            RagObservability observability,
+            ElasticsearchChunkIndexer elasticsearch,
+            @org.springframework.beans.factory.annotation.Value("${app.index.elasticsearch.enabled}") boolean elasticsearchEnabled,
+            @org.springframework.beans.factory.annotation.Value("${app.vector-store.backend}") String vectorBackend) {
         this.bm25Index = bm25Index;
         this.embeddingService = embeddingService;
         this.vectorStore = vectorStore;
@@ -58,6 +65,14 @@ public class HybridRetriever {
         this.reranker = reranker;
         this.retrievalExecutor = retrievalExecutor;
         this.observability = observability;
+        this.elasticsearch = elasticsearch;
+        this.elasticsearchEnabled = elasticsearchEnabled || "elasticsearch".equalsIgnoreCase(vectorBackend);
+    }
+
+    /** Compatibility constructor for retrieval-focused tests. */
+    public HybridRetriever(Bm25Index bm25Index, EmbeddingService embeddingService, VectorStore vectorStore,
+            RrfFusion rrfFusion, Reranker reranker, Executor retrievalExecutor, RagObservability observability) {
+        this(bm25Index, embeddingService, vectorStore, rrfFusion, reranker, retrievalExecutor, observability, null, false, "in-memory");
     }
 
     /**
@@ -68,6 +83,20 @@ public class HybridRetriever {
      * @return 精排后的 Top-K 结果
      */
     public List<SearchResult> retrieve(String query, int topK) {
+        return retrieve(query, topK, Set.of());
+    }
+
+    /**
+     * 在保持既有 BM25 + Vector + RRF + Rerank 链路的前提下，限制候选资料来源。
+     * allowedSources 为空表示不做范围限制；非空时只保留 chunk id 对应的文件名。
+     */
+    public List<SearchResult> retrieve(
+            String query,
+            int topK,
+            Set<String> allowedSources) {
+        Set<String> sourceFilter = allowedSources == null
+                ? Set.of()
+                : allowedSources;
         RagRequestObservation observation = observability.currentObservation();
         long retrievalStart = System.nanoTime();
         // 粗排取更多候选给 Reranker 留余量
@@ -75,11 +104,11 @@ public class HybridRetriever {
 
         // === 阶段一：并行双路粗排 ===
         CompletableFuture<List<String>> bm25Future = CompletableFuture.supplyAsync(
-                () -> fetchBm25RankedIds(query, candidateSize, observation),
+                () -> fetchBm25RankedIds(query, candidateSize, observation, sourceFilter),
                 retrievalExecutor);
 
         CompletableFuture<List<String>> vectorFuture = CompletableFuture.supplyAsync(
-                () -> fetchVectorRankedIds(query, candidateSize, observation),
+                () -> fetchVectorRankedIds(query, candidateSize, observation, sourceFilter),
                 retrievalExecutor);
 
         List<String> bm25RankedIds;
@@ -89,7 +118,7 @@ public class HybridRetriever {
             vectorRankedIds = vectorFuture.get();
         } catch (Exception e) {
             log.error("混合检索并行执行异常: {}", e.getMessage(), e);
-            bm25RankedIds = fetchBm25RankedIds(query, candidateSize, observation);
+            bm25RankedIds = fetchBm25RankedIds(query, candidateSize, observation, sourceFilter);
             vectorRankedIds = List.of();
         }
 
@@ -182,19 +211,23 @@ public class HybridRetriever {
     private List<String> fetchBm25RankedIds(
             String query,
             int topK,
-            RagRequestObservation observation) {
-        return observability.measure(
+            RagRequestObservation observation,
+            Set<String> allowedSources) {
+        List<String> ids = observability.measure(
                 observation,
                 RagStage.BM25,
-                () -> bm25Index.search(query, topK).stream()
-                        .map(Bm25Index.ScoredDoc::id)
-                        .toList());
+                () -> elasticsearchEnabled && elasticsearch != null
+                        ? elasticsearch.searchText(query, topK)
+                        : bm25Index.search(query, Math.max(topK, bm25Index.size()))
+                                .stream().map(Bm25Index.ScoredDoc::id).toList());
+        return filterSources(ids, allowedSources, topK);
     }
 
     private List<String> fetchVectorRankedIds(
             String query,
             int topK,
-            RagRequestObservation observation) {
+            RagRequestObservation observation,
+            Set<String> allowedSources) {
         Set<EmbeddingService.EmbeddingSource> sources =
                 vectorStore.embeddingSources();
         EmbeddingService.EmbeddingSource preferredSource = sources.size() == 1
@@ -209,9 +242,27 @@ public class HybridRetriever {
         if (queryVec.isEmpty()) {
             return List.of();
         }
-        return vectorStore.search(query, queryVec, topK).stream()
+        return vectorStore.search(query, queryVec, Math.max(topK, vectorStore.size())).stream()
                 .map(VectorStore.Result::id)
+                .filter(id -> allowedSources.isEmpty() || allowedSources.contains(sourceOf(id)))
+                .limit(topK)
                 .toList();
+    }
+
+    private List<String> filterSources(
+            List<String> ids,
+            Set<String> allowedSources,
+            int topK) {
+        return ids.stream()
+                .filter(id -> allowedSources.isEmpty() || allowedSources.contains(sourceOf(id)))
+                .limit(topK)
+                .toList();
+    }
+
+    private String sourceOf(String chunkId) {
+        if (chunkId == null) return "";
+        int separator = chunkId.indexOf(':');
+        return separator > 0 ? chunkId.substring(0, separator) : chunkId;
     }
 
     /**
@@ -223,6 +274,7 @@ public class HybridRetriever {
 
         for (String id : bm25Ids) {
             String text = bm25Index.getText(id);
+            if (text == null && elasticsearchEnabled && elasticsearch != null) text = elasticsearch.text(id);
             if (text != null) {
                 map.put(id, text);
             }
@@ -232,6 +284,7 @@ public class HybridRetriever {
         for (String id : vectorIds) {
             if (!map.containsKey(id)) {
                 String text = bm25Index.getText(id);
+                if (text == null && elasticsearchEnabled && elasticsearch != null) text = elasticsearch.text(id);
                 if (text != null) {
                     map.put(id, text);
                 }

@@ -47,6 +47,36 @@ services:
     networks:
       - backend
 
+  kafka:
+    image: apache/kafka:3.9.0
+    profiles: ["index"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    networks: [backend]
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    profiles: ["index"]
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health?wait_for_status=yellow || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: [backend]
+
   app:
     image: ${APP_IMAGE:-demo00-rag-agent:local}
     build:
@@ -72,6 +102,13 @@ services:
       SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: 25s
       RAG_DOCS_PATH: /app/docs
       APP_INGESTION_STARTUP_ENABLED: ${STARTUP_INGESTION_ENABLED:-false}
+      INDEX_KAFKA_ENABLED: ${INDEX_KAFKA_ENABLED:-false}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ELASTICSEARCH_ENABLED: ${ELASTICSEARCH_ENABLED:-false}
+      ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:-http://elasticsearch:9200}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-demo00-rag}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${LANGFUSE_OTLP_ENDPOINT:-http://localhost:4318/v1/traces}
+      OTEL_EXPORTER_OTLP_HEADERS: ${LANGFUSE_OTLP_HEADERS:-}
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       APP_VECTOR_STORE_BACKEND: ${VECTOR_STORE_BACKEND:-redis-stack}
       MCP_ENABLED: ${MCP_ENABLED:-true}

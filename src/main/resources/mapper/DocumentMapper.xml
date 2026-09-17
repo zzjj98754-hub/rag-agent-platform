@@ -14,16 +14,17 @@
     </resultMap>
 
     <sql id="DocumentColumns">
-        id, title, file_path, status, creator_id, create_time
+        id, title, file_path, status, creator_id, create_time, content, content_hash, document_version
     </sql>
 
     <insert id="upsert" parameterType="DocumentEntity">
-        INSERT INTO `document` (title, file_path, status, creator_id)
-        VALUES (#{title}, #{filePath}, #{status}, #{creatorId})
+        INSERT INTO `document` (title, file_path, status, creator_id, content, content_hash, document_version)
+        VALUES (#{title}, #{filePath}, #{status}, #{creatorId}, #{content}, #{contentHash}, #{documentVersion})
         ON DUPLICATE KEY UPDATE
             title = VALUES(title),
             status = VALUES(status),
             creator_id = COALESCE(VALUES(creator_id), creator_id)
+            ,content = VALUES(content), content_hash = VALUES(content_hash), document_version = VALUES(document_version)
     </insert>
 
     <select id="findById" resultMap="DocumentResultMap">

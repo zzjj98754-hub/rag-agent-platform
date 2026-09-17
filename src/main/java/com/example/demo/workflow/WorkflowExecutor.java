@@ -158,6 +158,18 @@ public class WorkflowExecutor {
         return resumed;
     }
 
+    public List<WorkflowRun> pendingApprovals(UserRole role) {
+        if (role != UserRole.ADMIN) throw new AccessDeniedException("Only ADMIN can review approvals");
+        return persistence.pendingApprovals();
+    }
+
+    /** Approval resumes from the persisted checkpoint; rejection becomes a terminal cancellation. */
+    public WorkflowRun decideApproval(String id, boolean approved, long userId, UserRole role) {
+        requireOwner(id, userId, role);
+        if (role != UserRole.ADMIN) throw new AccessDeniedException("Only ADMIN can approve workflows");
+        return approved ? retryForUser(id, userId, role) : cancel(id);
+    }
+
     private void save(WorkflowRun run) {
         runs.put(run.id(), run);
         persistence.updateRun(run);

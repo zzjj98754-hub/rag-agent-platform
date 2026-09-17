@@ -4,6 +4,8 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 
 /**
  * RAG 请求级观测入口，负责 ThreadLocal 生命周期、阶段指标和汇总日志。
@@ -16,15 +18,25 @@ public class RagObservability {
 
     private final ThreadLocal<RagRequestObservation> current = new ThreadLocal<>();
     private final RagMetrics metrics;
+    private final ObservationRegistry observationRegistry;
 
-    public RagObservability(RagMetrics metrics) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public RagObservability(RagMetrics metrics, ObservationRegistry observationRegistry) {
         this.metrics = metrics;
+        this.observationRegistry = observationRegistry;
+    }
+
+    /** Compatibility constructor for focused unit tests. */
+    public RagObservability(RagMetrics metrics) {
+        this(metrics, ObservationRegistry.create());
     }
 
     public <T> T observeRequest(String query, Supplier<T> action) {
         RagRequestObservation observation = beginRequest(query);
         try {
-            return withObservation(observation, action);
+            return Observation.createNotStarted("rag.request", observationRegistry)
+                    .lowCardinalityKeyValue("outcome", "started")
+                    .observe(() -> withObservation(observation, action));
         } finally {
             completeRequest(observation);
         }
@@ -74,7 +86,17 @@ public class RagObservability {
             Supplier<T> action) {
         long start = System.nanoTime();
         try {
-            return action.get();
+            String spanName = switch (stage) {
+                case BM25 -> "retrieval.bm25";
+                case EMBEDDING -> "retrieval.vector";
+                case RETRIEVAL -> "retrieval.rrf";
+                case RERANK -> "rerank.bge";
+                case LLM -> "llm.generate";
+                case TOTAL -> "rag.request";
+            };
+            return Observation.createNotStarted(spanName, observationRegistry)
+                    .lowCardinalityKeyValue("stage", stage.name().toLowerCase())
+                    .observe(action);
         } finally {
             recordDuration(observation, stage, System.nanoTime() - start);
         }

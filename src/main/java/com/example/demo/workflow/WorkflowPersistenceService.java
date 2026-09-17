@@ -160,6 +160,12 @@ public class WorkflowPersistenceService {
                 """, String.class);
     }
 
+    /** Checkpoints in WAITING_MANUAL are the approval inbox for the demo graph. */
+    public List<WorkflowRun> pendingApprovals() {
+        return jdbc.queryForList("SELECT instance_id FROM workflow_instance WHERE status='WAITING_MANUAL' ORDER BY update_time", String.class)
+                .stream().map(this::getRun).toList();
+    }
+
     private List<WorkflowRun.Step> steps(String id) {
         return jdbc.query("""
                 SELECT * FROM workflow_step_execution

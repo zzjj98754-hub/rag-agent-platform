@@ -1,7 +1,7 @@
 export interface UserInfo {
   id: number
   username: string
-  role: 'ADMIN' | 'USER' | 'GUEST'
+  role: 'ADMIN' | 'ANALYST' | 'USER' | 'GUEST'
 }
 
 export interface LoginResponse {
@@ -88,6 +88,27 @@ export interface DocumentUploadResponse {
   durationMs: number
 }
 
+export interface AsyncUploadResponse {
+  success: boolean
+  taskId: string
+  fileName: string
+  status: string
+}
+
+export interface IndexTaskStatus {
+  taskId: string
+  documentId?: number
+  status: 'PENDING' | 'PROCESSING' | 'RETRY_WAIT' | 'SUCCEEDED' | 'FAILED' | 'DEAD'
+  processedChunks: number
+  totalChunks: number
+  retryCount: number
+  failureCode?: string
+  failureReason?: string
+  createdAt?: string
+  startedAt?: string
+  finishedAt?: string
+}
+
 export interface ToolTrace {
   toolCallId?: string
   toolName: string
@@ -121,4 +142,43 @@ export interface ApiError {
   message?: string
   traceId?: string
   details?: Record<string, string>
+}
+
+export interface PrinterProduct {
+  id: number
+  productCode: string
+  modelName: string
+  description: string
+}
+
+export interface PrinterCitation {
+  documentId?: number
+  title: string
+  chunkId: string
+  score: number
+  snippet: string
+}
+
+export interface PrinterQaResponse {
+  product: PrinterProduct
+  answer: string
+  insufficientEvidence: boolean
+  citations: PrinterCitation[]
+}
+
+export interface AfterSalesApplication {
+  id: number
+  applicationNo: string
+  userId: number
+  username: string
+  productId: number
+  productCode: string
+  modelName: string
+  question: string
+  troubleshootingSteps: string
+  additionalNote?: string
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED'
+  processingNote?: string
+  createTime: string
+  updateTime: string
 }

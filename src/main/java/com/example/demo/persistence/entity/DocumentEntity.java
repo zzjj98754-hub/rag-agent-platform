@@ -10,6 +10,9 @@ public class DocumentEntity {
     private String status;
     private Long creatorId;
     private LocalDateTime createTime;
+    private String content;
+    private String contentHash;
+    private int documentVersion;
 
     public Long getId() {
         return id;
@@ -58,4 +61,10 @@ public class DocumentEntity {
     public void setCreateTime(LocalDateTime createTime) {
         this.createTime = createTime;
     }
+    public String getContent() { return content; }
+    public void setContent(String content) { this.content = content; }
+    public String getContentHash() { return contentHash; }
+    public void setContentHash(String contentHash) { this.contentHash = contentHash; }
+    public int getDocumentVersion() { return documentVersion; }
+    public void setDocumentVersion(int documentVersion) { this.documentVersion = documentVersion; }
 }

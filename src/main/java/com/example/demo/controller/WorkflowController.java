@@ -63,4 +63,15 @@ public class WorkflowController {
         var user = currentUser.requireCurrentUser();
         return Map.of("run", executor.retryForUser(id, user.id(), user.role()));
     }
+
+    @GetMapping("/workflows/approvals")
+    public Map<String, Object> approvals() {
+        return Map.of("items", executor.pendingApprovals(currentUser.requireCurrentUser().role()));
+    }
+
+    @PostMapping("/workflows/runs/{id}/approval")
+    public WorkflowRun approval(@PathVariable String id, @RequestBody Map<String, Boolean> request) {
+        var user = currentUser.requireCurrentUser();
+        return executor.decideApproval(id, Boolean.TRUE.equals(request.get("approved")), user.id(), user.role());
+    }
 }

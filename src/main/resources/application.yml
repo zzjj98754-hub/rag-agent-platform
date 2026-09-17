@@ -59,6 +59,14 @@ logging:
     org.springframework.web: WARN
 
 app:
+  graph:
+    alibaba:
+      enabled: "${SPRING_AI_ALIBABA_GRAPH_ENABLED:false}"
+  observability:
+    # Langfuse accepts OTLP/HTTP traces at this endpoint. Leave the default local
+    # endpoint for development; production injects the endpoint and auth headers.
+    otlp-endpoint: "${LANGFUSE_OTLP_ENDPOINT:${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}}"
+    otlp-headers: "${LANGFUSE_OTLP_HEADERS:${OTEL_EXPORTER_OTLP_HEADERS:}}"
   web:
     cors:
       allowed-origins: "${CORS_ALLOWED_ORIGINS:http://localhost:5173}"
@@ -116,6 +124,14 @@ app:
     batch-size: 50
     max-retries: 8
     retry-delay-seconds: 5
+  index:
+    kafka:
+      enabled: "${INDEX_KAFKA_ENABLED:false}"
+      topic: "${INDEX_KAFKA_TOPIC:rag.document.index}"
+    elasticsearch:
+      enabled: "${ELASTICSEARCH_ENABLED:false}"
+      base-url: "${ELASTICSEARCH_URL:http://localhost:9200}"
+      index: "${ELASTICSEARCH_INDEX:rag_chunks}"
   cache:
     ttl: 3600
     ttl-jitter: 0.1
@@ -141,7 +157,7 @@ app:
       username: admin
       password: "${BOOTSTRAP_ADMIN_PASSWORD:}"
   vector-store:
-    backend: in-memory
+    backend: "${APP_VECTOR_STORE_BACKEND:in-memory}"
     index-name: "${VECTOR_INDEX_NAME:demo00-rag-bge-large-zh-v1-5}"
     prefix: "${VECTOR_INDEX_PREFIX:demo00:rag:v1:}"
   rag:
@@ -160,6 +176,8 @@ app:
   ingestion:
     startup-enabled: true
     docs-path: "${RAG_DOCS_PATH:D:/docs}"
+  printer-demo:
+    auto-initialize: false
   embedding:
     api-key: "${EMBEDDING_API_KEY:}"
     url: https://api.siliconflow.cn/v1/embeddings
@@ -176,6 +194,12 @@ app:
     model: BAAI/bge-reranker-v2-m3
 
 management:
+  tracing:
+    sampling:
+      probability: "${OTEL_TRACES_SAMPLER_ARG:1.0}"
+  otlp:
+    tracing:
+      endpoint: "${app.observability.otlp-endpoint}"
   endpoints:
     web:
       exposure:

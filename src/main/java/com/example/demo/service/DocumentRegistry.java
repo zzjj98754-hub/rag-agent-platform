@@ -144,6 +144,18 @@ public class DocumentRegistry {
         return Map.copyOf(chunkMeta);
     }
 
+    /** Metadata for one document, used by the async consumer to avoid re-projecting every document. */
+    public Map<String, ChunkMeta> getChunkMetadata(String docId) {
+        DocRecord record = docs.get(docId);
+        if (record == null) return Map.of();
+        Map<String, ChunkMeta> result = new LinkedHashMap<>();
+        for (String chunkId : record.chunkIds()) {
+            ChunkMeta meta = chunkMeta.get(chunkId);
+            if (meta != null) result.put(chunkId, meta);
+        }
+        return Map.copyOf(result);
+    }
+
     public List<String> getChunkIds(String docId) {
         DocRecord record = docs.get(docId);
         return record == null ? List.of() : record.chunkIds();

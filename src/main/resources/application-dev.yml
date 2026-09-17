@@ -1,4 +1,8 @@
 app:
+  ingestion:
+    startup-enabled: false
+  printer-demo:
+    auto-initialize: true
   llm:
     url: "${LLM_URL:http://localhost:9090/mock-llm}"
     model: "${LLM_MODEL:mock-dev}"

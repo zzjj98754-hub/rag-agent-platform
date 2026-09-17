@@ -32,6 +32,7 @@ public class MockExternalLlmController {
 
     private static final Logger log = LoggerFactory.getLogger(MockExternalLlmController.class);
     private static final String AGENT_PROTOCOL_MARKER = "AGENT_DECISION_PROTOCOL_V1";
+    private static final String PRINTER_PROTOCOL_MARKER = "PRINTER_AFTER_SALES_PROTOCOL_V1";
     private static final Pattern ARITHMETIC_PATTERN =
             Pattern.compile("[0-9()\\s+\\-*/.%]+");
 
@@ -148,6 +149,9 @@ public class MockExternalLlmController {
         if (prompt.contains(AGENT_PROTOCOL_MARKER)) {
             return generateAgentDecision(prompt);
         }
+        if (prompt.contains(PRINTER_PROTOCOL_MARKER)) {
+            return generatePrinterResponse(prompt);
+        }
 
         StringBuilder answer = new StringBuilder();
         answer.append("【模拟 LLM 回答】\n\n");
@@ -184,6 +188,25 @@ public class MockExternalLlmController {
             answer.append("该问题暂时超出我的知识范围，建议补充相关文档或尝试更具体的提问。\n");
         }
 
+        return answer.toString();
+    }
+
+    /** 开发环境的确定性 Mock：从实际检索上下文中摘取步骤，便于无外部 Key 演示 RAG。 */
+    private String generatePrinterResponse(String prompt) {
+        String model = extractSection(prompt, "型号：", "。\n");
+        String question = extractSection(prompt, "用户问题：", "\n");
+        String references = extractSection(prompt, "--- 参考文档 ---\n", "--- 文档结束 ---");
+        String[] lines = references.split("\\R");
+        StringBuilder answer = new StringBuilder("基于所选型号「").append(model)
+                .append("」的已索引资料，针对“").append(question).append("”建议：\n");
+        int step = 1;
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty()) {
+                answer.append(step++).append(". ").append(trimmed).append('\n');
+            }
+        }
+        answer.append("以上内容仅来自本次检索到的虚构演示资料；资料未覆盖的维修或保修事项，请勿自行判断。[1]");
         return answer.toString();
     }
 

@@ -6,6 +6,11 @@ import java.util.List;
 import java.util.Locale;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import com.example.demo.persistence.entity.IndexTaskEntity;
+import com.example.demo.persistence.mapper.IndexTaskMapper;
 import com.example.demo.web.error.ResourceNotFoundException;
 
 @Service
@@ -18,23 +23,70 @@ public class DocumentPersistenceService {
     }
 
     private final DocumentMapper documentMapper;
+    private final OutboxEventService outboxEventService;
+    private final IndexTaskMapper indexTaskMapper;
 
-    public DocumentPersistenceService(DocumentMapper documentMapper) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public DocumentPersistenceService(DocumentMapper documentMapper, OutboxEventService outboxEventService, IndexTaskMapper indexTaskMapper) {
         this.documentMapper = documentMapper;
+        this.outboxEventService = outboxEventService;
+        this.indexTaskMapper = indexTaskMapper;
+    }
+
+    /** Compatibility constructor for focused persistence tests that do not exercise async indexing. */
+    public DocumentPersistenceService(DocumentMapper documentMapper, OutboxEventService outboxEventService) {
+        this(documentMapper, outboxEventService, null);
+    }
+
+    /** Writes document PROCESSING state and the asynchronous index command atomically. */
+    @Transactional
+    public String requestAsyncIndex(String taskId, String title, String filePath, String content, Long creatorId) {
+        DocumentEntity document = markProcessing(title, filePath, content, creatorId);
+        String hash = sha256(content);
+        IndexTaskEntity task = new IndexTaskEntity(); task.setTaskId(taskId); task.setDocumentId(document.getId());
+        task.setDocumentVersion(document.getDocumentVersion()); task.setContentHash(hash); task.setStatus("PENDING"); task.setMaxRetries(3);
+        indexTaskMapper.insert(task);
+        outboxEventService.documentIndexRequested(taskId, document.getId(), document.getDocumentVersion(), title, filePath, content, creatorId, hash);
+        return taskId;
     }
 
     @Transactional
-    public DocumentEntity markProcessing(
-            String title,
-            String filePath,
-            Long creatorId) {
+    public DocumentEntity markProcessing(String title, String filePath, String content, Long creatorId) {
         DocumentEntity document = new DocumentEntity();
         document.setTitle(requireText(title, "title", 255));
         document.setFilePath(requireText(filePath, "filePath", 512));
         document.setStatus(Status.PROCESSING.name());
         document.setCreatorId(creatorId);
+        document.setContent(content);
+        document.setContentHash(sha256(content));
+        DocumentEntity existing = documentMapper.findByFilePath(filePath);
+        document.setDocumentVersion(existing == null ? 1 : existing.getDocumentVersion() + 1);
         documentMapper.upsert(document);
         return documentMapper.findByFilePath(document.getFilePath());
+    }
+
+    public IndexTaskEntity findTask(String taskId) { return indexTaskMapper.findById(taskId); }
+    public boolean claimTask(String taskId, String workerId) { return indexTaskMapper.claim(taskId, workerId, 300) > 0; }
+    public void finishTask(String taskId, String status, String code, String reason) { indexTaskMapper.finish(taskId, status, code, reason); }
+    @Transactional
+    public boolean retryTask(String taskId) {
+        IndexTaskEntity task = indexTaskMapper.findById(taskId);
+        if (task == null || !("FAILED".equals(task.getStatus()) || "DEAD".equals(task.getStatus()))) return false;
+        DocumentEntity document = documentMapper.findById(task.getDocumentId());
+        if (document == null || document.getDocumentVersion() != task.getDocumentVersion()) return false;
+        if (indexTaskMapper.retry(taskId) == 0) return false;
+        outboxEventService.documentIndexRequested(taskId, document.getId(), document.getDocumentVersion(), document.getTitle(), document.getFilePath(), document.getContent(), document.getCreatorId(), document.getContentHash());
+        return true;
+    }
+    private String sha256(String value) {
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
+        catch (Exception e) { throw new IllegalStateException("内容哈希计算失败", e); }
+    }
+
+    /** Synchronous ingestion compatibility path. */
+    @Transactional
+    public DocumentEntity markProcessing(String title, String filePath, Long creatorId) {
+        return markProcessing(title, filePath, "", creatorId);
     }
 
     @Transactional

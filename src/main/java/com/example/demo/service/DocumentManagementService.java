@@ -21,11 +21,14 @@ public class DocumentManagementService {
     private final CurrentUserProvider currentUserProvider;
     private final List<DocumentContentExtractor> extractors;
     private final Set<String> allowedExtensions;
+    private final DocumentIndexTaskService documentIndexTaskService;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public DocumentManagementService(
             DocumentIngestionService ingestionService,
             CurrentUserProvider currentUserProvider,
             List<DocumentContentExtractor> extractors,
+            DocumentIndexTaskService documentIndexTaskService,
             @Value("${app.document.allowed-extensions}")
             String allowedExtensions) {
         this.ingestionService = ingestionService;
@@ -37,6 +40,37 @@ public class DocumentManagementService {
                 .map(value -> value.toLowerCase(Locale.ROOT))
                 .filter(value -> !value.isEmpty())
                 .collect(Collectors.toUnmodifiableSet());
+        this.documentIndexTaskService = documentIndexTaskService;
+    }
+
+    /** Compatibility constructor for existing synchronous upload tests and callers. */
+    public DocumentManagementService(DocumentIngestionService ingestionService,
+            CurrentUserProvider currentUserProvider,
+            List<DocumentContentExtractor> extractors,
+            String allowedExtensions) {
+        this.ingestionService = ingestionService;
+        this.currentUserProvider = currentUserProvider;
+        this.extractors = List.copyOf(extractors);
+        this.allowedExtensions = Arrays.stream(allowedExtensions.split(",")).map(String::trim)
+                .map(value -> value.toLowerCase(Locale.ROOT)).filter(value -> !value.isEmpty())
+                .collect(Collectors.toUnmodifiableSet());
+        this.documentIndexTaskService = null;
+    }
+
+    /** Async upload is the main demo entry: Outbox -> Kafka (optional) -> index consumer. */
+    public java.util.Map<String, Object> uploadAsync(MultipartFile file) {
+        if (documentIndexTaskService == null) throw new IllegalStateException("异步索引未配置");
+        String fileName = safeFileName(file);
+        String extension = extension(fileName);
+        if (!allowedExtensions.contains(extension)) throw new IllegalArgumentException("不支持的文件类型: " + extension);
+        DocumentContentExtractor extractor = extractors.stream().filter(it -> it.supports(extension)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("缺少文档解析器: " + extension));
+        try {
+            String content = extractor.extract(file);
+            if (content == null || content.isBlank()) throw new IllegalArgumentException("文档没有可提取的文本内容");
+            String taskId = documentIndexTaskService.request(fileName, content, currentUserProvider.requireCurrentUser().id());
+            return java.util.Map.of("success", true, "taskId", taskId, "fileName", fileName, "status", "PROCESSING");
+        } catch (IOException e) { throw new IllegalArgumentException("文档读取失败", e); }
     }
 
     public List<DocumentView> listDocuments() {

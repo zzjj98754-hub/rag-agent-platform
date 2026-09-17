@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 /**
  * 内存向量存储 —— ConcurrentHashMap + Redis JSON 可观测快照。
@@ -25,6 +26,7 @@ import org.springframework.stereotype.Component;
  *    InMemoryVectorStore 作为降级兜底——架构上 VectorStore 是接口，切换零业务代码改动。"
  */
 @Component("inMemoryVectorStore")
+@ConditionalOnProperty(prefix = "app.vector-store", name = "backend", havingValue = "in-memory", matchIfMissing = true)
 public class InMemoryVectorStore implements VectorStore {
 
     private static final Logger log = LoggerFactory.getLogger(InMemoryVectorStore.class);

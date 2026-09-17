@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Param;
 public interface OutboxEventMapper {
     int insert(OutboxEventEntity event);
     List<OutboxEventEntity> findPending(@Param("limit") int limit);
+    int claim(@Param("id") long id, @Param("workerId") String workerId, @Param("leaseSeconds") int leaseSeconds);
     int markProcessed(@Param("id") long id);
     int markRetry(@Param("id") long id,
                   @Param("error") String error,

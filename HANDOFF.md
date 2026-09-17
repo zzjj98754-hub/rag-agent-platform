@@ -1,8 +1,102 @@
 # 项目交接文档
 
+## 2026-09-17 代码审计与成果保存
+
+- 当前项目确认：`zzjj98754-hub/rag-agent-platform`，分支 `codex/rag-platform-completion`；审计起点 `483d5824509ab139ae4fb3c8b7324c5ba4d2c0e5`。
+- 已完成：按实际前后端/迁移/索引/申请/权限/Graph 代码审计；报告入口为 [docs/CURRENT_STATE_AUDIT.md](docs/CURRENT_STATE_AUDIT.md)，含 Mermaid、代码入口、数据模型、证据等级、问题优先级和分阶段验收。
+- 本轮验证：`.\mvnw.cmd test` Maven最终汇总 **94/94**（不是累加旧 Surefire 文件的95）；`.\mvnw.cmd -DskipTests package`、`cd frontend; npm run build`、基础及prod overlay `docker compose ... config --quiet` 通过。Docker CLI 29.7.2已存在，但引擎 pipe 不可用，容器/多节点未执行。
+- 实际新启动19090验证：Flyway13通过，两型号引用隔离、重复初始化数量2/6、申请幂等/重新GET、跨用户404、普通用户管理403、管理员修改后owner可见通过。旧9090服务未改动。
+- **已复现问题**：异步上传任务成功但文档正文长度0、docVersion2/taskVersion1；“卡纸”误拒答；“打印机如何更换房屋门锁？”误判有依据；COMPLETED可退回PENDING。已解决只是toast，打印机没有多轮/SSE，默认LLM为Mock。旧完成记录应以本次审计对能力边界的纠正为准。
+- 未完成：修复上述问题、官方Graph归属鉴权、真实模型/ES/Kafka/浏览器竞态/空库升级验证。本次只增加审计文档，不提前修改业务。
+- 续接第一步：按报告P0-01检查 `DocumentIndexTaskService.consume -> DocumentIngestionService.ingestOne -> DocumentPersistenceService.markProcessing`；先固定文档正文与版本契约，再补索引重试/恢复。
+- 审计夹具：本地新增两个 `audit_*_20260917_1406` USER、审计申请及 `audit-printer-state-20260917.md` 文档；仅虚构数据，未提交数据库或日志。保留这些记录供复核。
+- 推送核验命令：`git rev-parse HEAD` 与 `git ls-remote origin refs/heads/codex/rag-platform-completion`；最终答复提供核对后的SHA。与业务无关的学习资料、AGENTS及Dockerfile现有修改保留在工作区。
+
+## 2026-09-16 打印机售后助手闭环
+
+### 当前目标
+
+在既有 RAG Agent 上完成可运行的虚构打印机售后最小业务闭环：选择型号、按型号资料问答并展示原文依据、未解决时提交售后申请、管理员处理状态、用户查看结果。
+
+### 已完成
+
+- 新增 Flyway V13：`printer_product`、`printer_product_document`、`after_sales_application`。
+- 新增 2 个明确标注为虚构的型号：虚构星河 A100、虚构远山 B200；每个型号有使用手册、故障说明、保修政策，共 6 份 Markdown 演示资料，覆盖卡纸、无法连接、打印模糊，并设置了不同处理规则。
+- `PrinterCatalogService` 通过现有 `DocumentIngestionService.ingestOne` 走文档切分、BM25、Embedding、VectorStore 索引；开发 profile 启动时可重复初始化，避免 JVM 内存向量库重启后缺资料。
+- `HybridRetriever` 增加资料来源集合过滤，问答只检索所选型号关联的资料；`PrinterQaService` 返回回答、来源文件、chunk id、分数和可展开原文片段，并对本地向量降级结果增加词项依据门控，资料不足时不生成泛化答案。
+- 新增售后申请创建/列表/详情/管理员列表/状态更新接口；数据库唯一键和现有 `Idempotency-Key` 中间件共同防止重复提交；普通用户详情按 `user_id` 隔离，管理接口使用 ADMIN RBAC。
+- 前端新增 `/printer-assistant`、`/my-applications`、`/applications/:id`、`/admin/applications`，包含加载、空数据、失败状态、引用原文展开、申请和管理状态更新。
+- 新增 `HybridRetrieverProductFilterTest` 和 `PrinterApplicationServiceIntegrationTest`，覆盖型号过滤、申请幂等、用户隔离。
+
+### 启动命令（Windows PowerShell）
+
+```powershell
+$env:JAVA_HOME = 'D:\dev\jdks'
+$env:BOOTSTRAP_ADMIN_PASSWORD = 'local-admin-change-me'
+$env:APP_SECURITY_BOOTSTRAP_ADMIN_ENABLED = 'true'
+.\mvnw.cmd spring-boot:run
+```
+
+另开终端启动前端：
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+访问 `http://localhost:5173`。管理员账号为 `admin`，密码为启动命令中的
+`BOOTSTRAP_ADMIN_PASSWORD`；已有同名账号不会被重置。开发 profile 会自动初始化演示资料，也可在管理员页面点击“初始化演示资料”重复执行。若使用打包 jar，先执行 `.\mvnw.cmd -DskipTests package`，再运行 `java -jar target\demo00-0.0.1-SNAPSHOT.jar`。
+
+### 约五分钟演示路径
+
+1. 用 `admin / local-admin-change-me` 登录，确认型号下拉出现“虚构星河 A100”和“虚构远山 B200”。
+2. 选“虚构星河 A100”，输入 `无法连接 Wi-Fi 怎么排查？`；应看到 2.4GHz 规则，并展开引用查看 `虚构-星河-A100-使用手册.md` 原文。
+3. 改选“虚构远山 B200”，再次输入同一句；应看到支持 5GHz/网线的 B200 规则，引用文件全部为远山资料，不混用星河资料。
+4. 输入 `如何更换房屋门锁？`；应看到“资料不足”，且没有可用引用，不会编造维修方法。
+5. 输入 `打印模糊`，点击“未解决，申请售后”，补充 `清洁和校准后仍然模糊` 并提交；在“我的售后申请”看到申请编号，刷新后仍存在。快速重复点击使用同一幂等键只保留一条。
+6. 打开“售后管理处理”，把申请改为“处理中”或“已完成”，填写处理说明并保存；回到申请详情刷新，状态和处理说明应更新。
+
+### 验证结果
+
+- `.\mvnw.cmd -DskipTests compile`：通过。
+- `.\mvnw.cmd -DskipTests package`：通过（服务启动前执行）。
+- `.\mvnw.cmd '-Dtest=HybridRetrieverProductFilterTest,PrinterApplicationServiceIntegrationTest' test`：2/2 通过；MySQL 可用。
+- `npm run build`：通过。
+- `.\mvnw.cmd test`：通过，50 个测试类共 95 个用例，失败 0、错误 0；Redis/OTLP 未启动产生的降级与观测告警不影响测试结果。
+- 实际 HTTP：MySQL/Flyway V13、admin 登录、重复初始化（2 products/6 documents）、两型号同类问题引用隔离、未知问题资料不足、申请刷新存在、相同幂等键同一申请、管理员改为 COMPLETED 后用户详情可见：通过。
+- `/actuator/health` 在本机显示 DOWN，原因是 Redis `localhost:6379` 未启动；现有代码对缓存/向量快照有降级，打印机核心链路使用 MySQL + JVM 索引仍可运行。OTLP `localhost:4318` 同样未启动，属于观测告警，不影响上述业务验证。
+
+### 下一步/限制
+
+- 目前演示资料是短 Markdown，单文件可能以一个 flat chunk 返回，引用片段因此较完整；生产资料仍应配合真实文档版本和外部向量后端。
+- 管理员账号通过环境变量 bootstrap，生产环境必须使用强密码；本项目不接入真实厂商、支付、物流、短信或外部客服。
+- 全量测试已在本机完成；Docker CLI 在本机不可用，Compose 未做实际拉起验证。
+
 > 更新时间：2026-07-20  
 > 项目目录：`D:\dev\code\java\demo00`  
 > 技术栈：Spring Boot 3.3 / Java 17 / MyBatis / MySQL / Redis / React 18 / TypeScript / Vite
+
+## 2026-09-06 本轮进度
+
+- 已从当前 `main` 工作树创建功能分支 `codex/rag-platform-completion`，保留原有未提交修改。
+- 新增 V10 持久化异步索引任务迁移：`document` 保存内容、SHA-256 和版本；`index_task` 保存状态、重试、租约、失败原因和时间字段。
+- Outbox 文档事件已携带稳定 `taskId`、`documentId`、`documentVersion`、`contentHash`；消费者开始使用数据库条件抢占，不再把 JVM Map 作为生产事实来源。
+- 已验证：Maven compile 通过；`Demo00ApplicationTests` 和 `BusinessPersistenceIntegrationTest` 通过；V10 已在本机 MySQL 应用。
+- 当前阻塞/待修复：旧 `DocumentIndexTaskServiceTest` 仍验证内存 Map 契约；Kafka Relay 尚未等待发送 Future 成功；任务状态接口字段仍需对齐目标协议；ES mapping/KNN 尚未实现。
+- 已完成任务状态/重试接口和 Relay Kafka Future 确认；`DocumentIndexTaskServiceTest` 已改为真实 taskId 事件并通过。
+- ES 已增加启动 mapping 初始化、BM25 `childText`/`parentText` 字段、dense_vector 字段、健康检查和稳定 chunk 文档 ID；当前检索器仍未切换到 ES，向量写入仍需接入真实 embedding 数据。
+- 已新增条件装配的 `ElasticsearchVectorStore`，`APP_VECTOR_STORE_BACKEND=elasticsearch` 时由 `HybridRetriever` 的 `VectorStore` 注入点选用，内存实现仅在 `in-memory` 时装配；当 `ELASTICSEARCH_ENABLED=true` 时 BM25 路也通过 `ElasticsearchChunkIndexer.searchText(childText)` 查询，默认仍保留 JVM `Bm25Index` 降级。
+- 已加入 Micrometer Tracing OTel bridge 与 OTLP exporter；`RagObservability` 现在为 `rag.request`、`retrieval.bm25`、`retrieval.vector`、`retrieval.rrf`、`rerank.bge`、`llm.generate` 创建 Observation，端点由 `OTEL_EXPORTER_OTLP_ENDPOINT` 配置。相关指标测试通过；Langfuse 仍需按其 OTLP ingest 配置做端到端验证。
+- 新增 V11 Graph checkpoint 元数据列：`current_node`、`session_id`、`risk_level`、`pending_approval`、`version`；自研 Graph 保存节点状态时同步更新这些字段。修复 `RagObservability` 多构造器 Spring 注入问题。
+- 前端知识库页已切换到 `/admin/documents/upload/async`，持久化 `taskId` 到 localStorage，轮询状态，刷新后恢复任务，并对 `FAILED/DEAD` 提供重试按钮；前端 API/types 已同步异步任务协议。
+- `document_chunk` 已由 `DocumentIngestionService` 在切分后持久化；任务状态接口现在通过 `DocumentChunkPersistenceService.count` 返回真实 `processedChunks/totalChunks`，不再固定返回 `0/0`。
+- 前端异步上传现在复用已有 `IdempotencyInterceptor/IdempotencyService`，按文件名、大小和修改时间发送 `Idempotency-Key`，重复点击可重放同一成功响应或得到进行中冲突，不会重复创建 HTTP 副作用。
+- 最近验证：`mvn test -Dtest=DocumentIndexTaskServiceTest,Demo00ApplicationTests`、`mvn test -Dtest=Demo00ApplicationTests,RagObservabilityTest` 通过；`git diff --check` 无错误。Docker CLI 在本机不可用，Compose 仅能保留静态配置验证。
+- 前端验证：由于系统 npm shim 损坏，直接执行 `npm run build` 不可用；使用现有本地 Node 依赖直接执行 `tsc -b --pretty false` 和 Vite build，均通过，生成 `frontend/dist`。
+- 最近追加验证：`mvn test -Dtest=Demo00ApplicationTests,DocumentIndexTaskServiceTest,DocumentManagementServiceTest` 通过。
+- 下一步：实现 ElasticsearchVectorStore 并接入 HybridRetriever；随后补 OTel/Langfuse 链路和 Graph 版本升级评估。
+- 官方兼容性核实：Spring AI Alibaba `1.1.2.2` 的官方 POM 对齐 Spring AI `1.1.2`、Spring Boot `3.5.8`；本项目当前为 Spring AI `1.1.8`、Spring Boot `3.5.15`。因此当前 `graph/` 只能标注为自研 checkpoint workflow，不能宣称 Spring AI Alibaba Graph。阶段六需要先做依赖升级/降级评估，不通过伪造同名类完成。
 
 ## 1. 当前整体任务
 
@@ -436,3 +530,20 @@ npm run dev
 ```
 
 最后提醒：不要从聊天历史或日志复制真实 API Key；只从安全环境变量读取，并在输出命令结果前确认不会回显秘密。
+## 2026-09-06 全量回归结果
+
+- 当前分支：`codex/rag-platform-completion`。
+- 后端全量测试：使用缓存 Maven 3.9.15 执行 `mvn test`，退出码 0，全部通过。
+- `git diff --check`：通过；仅有换行符转换和 Git 全局 ignore 文件权限提示，无 diff 空白错误。
+- 前端此前已通过 `node node_modules/typescript/bin/tsc -b --pretty false` 与本地 Vite build；系统 npm shim 仍不可用。
+- Docker Compose 真实联调已完成：MySQL/Flyway、Redis、Kafka 3.9、Elasticsearch 8.15.3 均启动；应用在 `INDEX_KAFKA_ENABLED=true`、`ELASTICSEARCH_ENABLED=true`、`VECTOR_STORE_BACKEND=elasticsearch` 下健康检查返回 `UP`，Kafka consumer 成功订阅 `rag.document.index`。验证使用了仅用于启动的占位 OpenAI key，未调用外部模型；Langfuse ingest 仍需外部凭据/服务。
+- Spring AI Alibaba Graph：加入官方 `com.alibaba.cloud.ai:spring-ai-alibaba-graph-core:1.1.2.2`，新增 `AlibabaRagApprovalGraphService`（真实 `StateGraph`/`compile`/`invoke`），生产构造路径使用官方 `MysqlSaver`；以 `SPRING_AI_ALIBABA_GRAPH_ENABLED=true` 启动上下文验证通过；仍需后续切换现有审批 API。
+- Graph 专测：`AlibabaRagApprovalGraphServiceTest` 通过，确认官方图实际执行到 `verify/SUCCEEDED`，不是仅依赖编译。
+- Graph 审批恢复：官方图改为 `approval` 条件边；无批准时返回 `WAITING_APPROVAL`，同一 `threadId` 通过 `MysqlSaver` 更新状态后恢复到 `verify/SUCCEEDED`，专测已通过。现有默认 `/graph/rag/*` API 仍保持兼容 fallback。
+- Graph REST 路由：`RagGraphController` 在 `SPRING_AI_ALIBABA_GRAPH_ENABLED=true` 时将 start/get/approval POST 路由到官方适配器，关闭时继续使用原 MySQL fallback；焦点门禁及随后全量测试均通过。
+- 本轮最终全量后端回归：92 tests，0 failures，0 errors；前一次并发熔断指标的单次时序波动在重跑中未复现。
+- Langfuse 配置：增加 `LANGFUSE_OTLP_ENDPOINT`/`LANGFUSE_OTLP_HEADERS` 到应用与 Compose，并让 `management.otlp.tracing.endpoint` 统一读取；真实 Langfuse ingest 仍需外部凭据/服务联调。
+- Outbox 多实例可靠性：新增 V12 `claimed_by/claim_until`，Relay 先原子 claim 再发布；成功/失败状态更新只接受 `PROCESSING`，避免多个实例同时产生外部副作用。任务/Relay 专测 10 项通过。
+- Outbox 崩溃恢复：`findPending`/`claim` 现在会重新拾取 `PROCESSING` 且 `claim_until` 已过期的事件，避免 worker 崩溃造成永久卡死。
+- Kafka OTel propagation：`KafkaIndexEventPublisher` 向 `ProducerRecord` 注入 W3C traceparent，`KafkaDocumentIndexConsumer` 从 ConsumerRecord 提取并在任务处理期间恢复上下文；Maven compile 通过。真实 broker 联调仍待环境支持。
+- Elasticsearch VectorStore 条件装配：`VectorStoreConfig` 改为使用 `ObjectProvider`，避免 Elasticsearch 后端因内存实现被条件禁用而启动失败。

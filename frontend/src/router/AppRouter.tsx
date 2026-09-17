@@ -9,6 +9,10 @@ const AgentPage = lazy(() => import('../pages/Agent'))
 const ChatPage = lazy(() => import('../pages/Chat'))
 const KnowledgePage = lazy(() => import('../pages/Knowledge'))
 const LoginPage = lazy(() => import('../pages/Login'))
+const PrinterAssistantPage = lazy(() => import('../pages/PrinterAssistant'))
+const MyApplicationsPage = lazy(() => import('../pages/MyApplications'))
+const ApplicationDetailPage = lazy(() => import('../pages/ApplicationDetail'))
+const AdminApplicationsPage = lazy(() => import('../pages/AdminApplications'))
 
 function ProtectedLayout() {
   const { isAuthenticated } = useAuth()
@@ -31,7 +35,7 @@ export default function AppRouter() {
           path="/login"
           element={
             isAuthenticated ? (
-              <Navigate to="/chat" replace />
+              <Navigate to="/printer-assistant" replace />
             ) : (
               <LoginPage />
             )
@@ -39,11 +43,15 @@ export default function AppRouter() {
         />
         <Route element={<ProtectedLayout />}>
           <Route path="/chat" element={<ChatPage />} />
+          <Route path="/printer-assistant" element={<PrinterAssistantPage />} />
+          <Route path="/my-applications" element={<MyApplicationsPage />} />
+          <Route path="/applications/:id" element={<ApplicationDetailPage />} />
+          <Route path="/admin/applications" element={<AdminApplicationsPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />
           <Route path="/agent" element={<AgentPage />} />
         </Route>
-        <Route path="/" element={<Navigate to="/chat" replace />} />
-        <Route path="*" element={<Navigate to="/chat" replace />} />
+        <Route path="/" element={<Navigate to="/printer-assistant" replace />} />
+        <Route path="*" element={<Navigate to="/printer-assistant" replace />} />
       </Routes>
     </Suspense>
   )

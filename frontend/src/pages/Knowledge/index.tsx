@@ -6,6 +6,7 @@ import {
   FileTextOutlined,
   ReloadOutlined,
   SafetyOutlined,
+  ReloadOutlined as RetryOutlined,
 } from '@ant-design/icons'
 import {
   Alert,
@@ -26,9 +27,11 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   deleteDocument,
   listDocuments,
-  uploadDocument,
+  uploadDocumentAsync,
+  getIndexTaskStatus,
+  retryIndexTask,
 } from '../../api/document'
-import type { DocumentItem } from '../../api/types'
+import type { DocumentItem, IndexTaskStatus } from '../../api/types'
 import { useAuth } from '../../store/AuthContext'
 import { errorMessage } from '../../utils/error'
 
@@ -56,6 +59,12 @@ export default function KnowledgePage() {
   const [documents, setDocuments] = useState<DocumentItem[]>([])
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [tasks, setTasks] = useState<IndexTaskStatus[]>([])
+
+  const persistTasks = (next: IndexTaskStatus[]) => {
+    setTasks(next)
+    localStorage.setItem('demo00.indexTasks', JSON.stringify(next.filter((task) => !['SUCCEEDED'].includes(task.status))))
+  }
 
   const refresh = useCallback(async () => {
     if (user?.role !== 'ADMIN') return
@@ -70,9 +79,22 @@ export default function KnowledgePage() {
     }
   }, [message, user?.role])
 
+  const pollTasks = useCallback(async () => {
+    const stored = JSON.parse(localStorage.getItem('demo00.indexTasks') || '[]') as IndexTaskStatus[]
+    if (!stored.length) return
+    const next = await Promise.all(stored.map(async (task) => {
+      try { return await getIndexTaskStatus(task.taskId) } catch { return task }
+    }))
+    persistTasks(next)
+    if (next.some((task) => ['SUCCEEDED', 'FAILED', 'DEAD'].includes(task.status))) await refresh()
+  }, [refresh])
+
   useEffect(() => {
     void refresh()
-  }, [refresh])
+    void pollTasks()
+    const timer = window.setInterval(() => void pollTasks(), 3000)
+    return () => window.clearInterval(timer)
+  }, [refresh, pollTasks])
 
   const uploadProps: UploadProps = {
     accept: '.pdf,.md,.txt',
@@ -82,15 +104,13 @@ export default function KnowledgePage() {
     customRequest: async ({ file, onSuccess, onError }) => {
       setUploading(true)
       try {
-        const result = await uploadDocument(file as File)
-        if (!result.success) {
-          throw new Error(
-            result.failed[0]?.reason || '文档入库失败',
-          )
-        }
-        message.success(
-          `${result.fileName} 已完成入库，共 ${result.totalChunks} 个 Chunk`,
-        )
+        const selected = file as File
+        const idempotencyKey = `knowledge-upload:${selected.name}:${selected.size}:${selected.lastModified}`
+        const result = await uploadDocumentAsync(selected, idempotencyKey)
+        if (!result.success) throw new Error('文档任务创建失败')
+        const initial: IndexTaskStatus = { taskId: result.taskId, status: 'PENDING', processedChunks: 0, totalChunks: 0, retryCount: 0 }
+        persistTasks([...tasks.filter((task) => task.taskId !== initial.taskId), initial])
+        message.success(`${result.fileName} 已进入异步索引队列`)
         onSuccess?.(result)
         await refresh()
       } catch (error) {
@@ -103,6 +123,8 @@ export default function KnowledgePage() {
       }
     },
   }
+
+  const taskRows = tasks.map((task) => ({ ...task, title: `任务 ${task.taskId.slice(0, 8)}` }))
 
   const columns: TableProps<DocumentItem>['columns'] = [
     {
@@ -275,6 +297,21 @@ export default function KnowledgePage() {
             )}
           </div>
         </Card>
+
+        {taskRows.length > 0 && <Card title="异步索引任务" bordered={false}>
+          <Table
+            rowKey="taskId"
+            dataSource={taskRows}
+            pagination={false}
+            columns={[
+              { title: 'Task', dataIndex: 'title' },
+              { title: '状态', dataIndex: 'status', render: (status: string) => <Tag color={statusColor[status] || 'default'}>{status}</Tag> },
+              { title: 'Chunk', render: (_: unknown, task: IndexTaskStatus) => `${task.processedChunks}/${task.totalChunks || '?'}` },
+              { title: '失败原因', dataIndex: 'failureReason', render: (value?: string) => value || '-' },
+              { title: '', render: (_: unknown, task: IndexTaskStatus) => ['FAILED', 'DEAD'].includes(task.status) && <Button size="small" icon={<RetryOutlined />} onClick={async () => { await retryIndexTask(task.taskId); await pollTasks() }}>重试</Button> },
+            ]}
+          />
+        </Card>}
 
         <Card className="document-table-card" bordered={false}>
           <div className="card-heading">

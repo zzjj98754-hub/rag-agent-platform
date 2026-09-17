@@ -84,6 +84,13 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-vector-store-redis</artifactId>
         </dependency>
+        <!-- Official Spring AI Alibaba Graph API. The adapter is opt-in until its
+             checkpoint schema is enabled; the project keeps the local graph as fallback. -->
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-graph-core</artifactId>
+            <version>1.1.2.2</version>
+        </dependency>
         <!-- The platform owns MCP client lifecycle, so depend on the patched SDK directly. -->
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>
@@ -101,6 +108,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- Optional async index transport. Disabled by default so the demo also runs without Kafka. -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
         </dependency>
 
         <!-- 连接池（Lettuce 需要） -->
@@ -157,6 +169,14 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
         </dependency>
 
         <!-- Lombok -->

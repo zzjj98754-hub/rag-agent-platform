@@ -5,6 +5,7 @@ import com.example.demo.dto.IngestionStatus;
 import com.example.demo.dto.DocumentView;
 import com.example.demo.persistence.entity.DocumentEntity;
 import com.example.demo.persistence.service.DocumentPersistenceService;
+import com.example.demo.persistence.service.DocumentChunkPersistenceService;
 import com.example.demo.rag.Bm25Index;
 import com.example.demo.rag.Chunk;
 import com.example.demo.rag.HierarchicalChunker;
@@ -50,11 +51,13 @@ public class DocumentIngestionService {
     private final Bm25Index bm25Index;
     private final DocumentRegistry documentRegistry;
     private final DocumentPersistenceService documentPersistenceService;
+    private final DocumentChunkPersistenceService chunkPersistenceService;
     private final boolean startupIngestionEnabled;
     private final String configuredDocsPath;
 
     private final ConcurrentHashMap<String, IngestionStatus> tasks = new ConcurrentHashMap<>();
 
+    @org.springframework.beans.factory.annotation.Autowired
     public DocumentIngestionService(
             HierarchicalChunker hierarchicalChunker,
             EmbeddingService embeddingService,
@@ -62,6 +65,7 @@ public class DocumentIngestionService {
             Bm25Index bm25Index,
             DocumentRegistry documentRegistry,
             DocumentPersistenceService documentPersistenceService,
+            DocumentChunkPersistenceService chunkPersistenceService,
             @Value("${app.ingestion.startup-enabled}") boolean startupIngestionEnabled,
             @Value("${app.ingestion.docs-path}") String configuredDocsPath) {
         this.hierarchicalChunker = hierarchicalChunker;
@@ -70,8 +74,18 @@ public class DocumentIngestionService {
         this.bm25Index = bm25Index;
         this.documentRegistry = documentRegistry;
         this.documentPersistenceService = documentPersistenceService;
+        this.chunkPersistenceService = chunkPersistenceService;
         this.startupIngestionEnabled = startupIngestionEnabled;
         this.configuredDocsPath = configuredDocsPath;
+    }
+
+    /** Compatibility constructor for retrieval-focused tests that do not configure JDBC chunks. */
+    public DocumentIngestionService(HierarchicalChunker hierarchicalChunker,
+            EmbeddingService embeddingService, VectorStore vectorStore, Bm25Index bm25Index,
+            DocumentRegistry documentRegistry, DocumentPersistenceService documentPersistenceService,
+            boolean startupIngestionEnabled, String configuredDocsPath) {
+        this(hierarchicalChunker, embeddingService, vectorStore, bm25Index, documentRegistry,
+                documentPersistenceService, null, startupIngestionEnabled, configuredDocsPath);
     }
 
     /**
@@ -343,6 +357,10 @@ public class DocumentIngestionService {
         }
 
         documentRegistry.register(fileName, fileHash, chunkMetas);
+        // Persist the parent-child links once. This is the checkpoint needed to rebuild
+        // a production index without changing the simple in-memory retrieval demo.
+        var document = documentPersistenceService.findByFilePath(filePath);
+        if (document != null && chunkPersistenceService != null) chunkPersistenceService.replace(document.getId(), chunks);
 
         // 单独调用兼容路径：注册后立即建立 BM25，但仍不会先做 Embedding。
         if (rebuildBm25) {

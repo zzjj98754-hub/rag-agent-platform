@@ -13,6 +13,7 @@ public class OutboxEventService {
 
     public static final String SESSION_CREATED = "SESSION_CREATED";
     public static final String MESSAGE_APPENDED = "CHAT_MESSAGE_APPENDED";
+    public static final String DOCUMENT_INDEX_REQUESTED = "DOCUMENT_INDEX_REQUESTED";
 
     private final OutboxEventMapper mapper;
     private final ObjectMapper objectMapper;
@@ -40,9 +41,17 @@ public class OutboxEventService {
                 "timestamp", timestamp));
     }
 
+    /** Source text is kept in the outbox for this learning demo, avoiding shared file storage. */
+    public void documentIndexRequested(String taskId, Long documentId, int documentVersion, String fileName, String filePath, String content, Long creatorId, String contentHash) {
+        append(taskId, DOCUMENT_INDEX_REQUESTED, Map.of(
+                "taskId", taskId, "documentId", documentId, "documentVersion", documentVersion,
+                "contentHash", contentHash, "fileName", fileName, "filePath", filePath, "content", content,
+                "creatorId", creatorId == null ? -1L : creatorId));
+    }
+
     private void append(String sessionId, String eventType, Object payload) {
         OutboxEventEntity event = new OutboxEventEntity();
-        event.setAggregateType("CHAT_SESSION");
+        event.setAggregateType(DOCUMENT_INDEX_REQUESTED.equals(eventType) ? "DOCUMENT" : "CHAT_SESSION");
         event.setAggregateId(sessionId);
         event.setEventType(eventType);
         try {

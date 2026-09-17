@@ -62,4 +62,15 @@ public class IngestionStatus {
         long end = completedAt > 0 ? completedAt : System.currentTimeMillis();
         return end - createdAt;
     }
+
+    public void restore(String persistedState, int retryCount, String failureCode, String failureReason,
+            java.time.LocalDateTime created, java.time.LocalDateTime started, java.time.LocalDateTime finished) {
+        this.state = switch (persistedState) {
+            case "PROCESSING" -> State.RUNNING;
+            case "SUCCEEDED" -> State.COMPLETED;
+            case "FAILED", "DEAD" -> State.FAILED;
+            default -> State.PENDING;
+        };
+        this.error = failureCode == null ? failureReason : failureCode + ": " + failureReason;
+    }
 }
