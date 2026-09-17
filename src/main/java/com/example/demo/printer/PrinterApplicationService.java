@@ -47,7 +47,8 @@ public class PrinterApplicationService {
                     (application_no, user_id, product_id, question, troubleshooting_steps,
                      additional_note, status, idempotency_key, request_fingerprint)
                 VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
-                ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
+                ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id),
+                    request_fingerprint = COALESCE(request_fingerprint, VALUES(request_fingerprint))
                 """, number, user.id(), command.productId(), command.question().trim(),
                 command.troubleshootingSteps().trim(), blankToNull(command.additionalNote()), normalizedKey, fingerprint);
         Long id = jdbc.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
@@ -72,6 +73,11 @@ public class PrinterApplicationService {
 
     @Transactional
     public ApplicationView updateStatus(Long id, UpdateStatus command) {
+        return updateStatus(id, command, 0L);
+    }
+
+    @Transactional
+    public ApplicationView updateStatus(Long id, UpdateStatus command, long operatorId) {
         if (!List.of("PENDING", "PROCESSING", "COMPLETED").contains(command.status())) {
             throw new IllegalArgumentException("status 只能是 PENDING、PROCESSING 或 COMPLETED");
         }
@@ -84,6 +90,8 @@ public class PrinterApplicationService {
         int changed = jdbc.update("UPDATE after_sales_application SET status = ?, processing_note = ?, version=version+1 WHERE id = ? AND version = ?",
                 command.status(), blankToNull(command.processingNote()), id, current.version());
         if (changed == 0) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT, "申请已被其他管理员更新");
+        jdbc.update("INSERT INTO after_sales_status_event(application_id,from_status,to_status,operator_id,note) VALUES(?,?,?,?,?)",
+                id, current.status(), command.status(), operatorId, blankToNull(command.processingNote()));
         return requireAny(id);
     }
 
